@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { verifyGoogleTokenScopes } from "@/lib/google-permissions";
 
 export const Route = createFileRoute("/auth/callback")({
   component: OAuthCallback,
@@ -9,49 +8,38 @@ export const Route = createFileRoute("/auth/callback")({
 
 function OAuthCallback() {
   const navigate = useNavigate();
-
+  const [message, setMessage] = useState("Completing Google sign-in…");
   useEffect(() => {
     let active = true;
+    const pending = sessionStorage.getItem("taskbase-google-connect");
 
-    const handleSession = async (session: any) => {
-      if (!session || !active) return;
-      
-      const token = session.provider_token;
-      if (token) {
-        console.log("[OAuth Callback] Verifying Google token scopes...");
-        const valid = await verifyGoogleTokenScopes(token);
-        if (!valid) {
-          console.warn("[OAuth Callback] Scope check failed! Signing out and redirecting to auth...");
-          await supabase.auth.signOut();
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("google_permission_error", "true");
-          }
-          window.location.href = "/auth?error=permissions_required";
-          return;
-        }
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return;
+      sessionStorage.removeItem("taskbase-google-connect");
+      const params = new URLSearchParams(location.hash.slice(1) || location.search);
+      if (error || params.has("error") || !data.session) {
+        setMessage(
+          params.get("error_description") || error?.message || "Google sign-in did not complete.",
+        );
+        return;
       }
-
-      console.log("[OAuth Callback] Verification passed. Redirecting to home.");
-      navigate({ to: "/home" });
-    };
-
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && session) {
-        handleSession(session);
+      if (pending && data.session.user.id !== pending) {
+        void supabase.auth.signOut();
+        setMessage("Use the same Google account that owns this TaskBase workspace.");
+        return;
       }
+      void navigate({ to: pending ? "/permissions" : "/home", replace: true });
     });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        handleSession(session);
-      }
-    });
-
     return () => {
       active = false;
-      listener.subscription.unsubscribe();
     };
   }, [navigate]);
-
-  return null;
+  return (
+    <main className="mx-auto max-w-lg p-8">
+      <p role="status">{message}</p>
+      <a href="/auth" className="underline">
+        Back to sign in
+      </a>
+    </main>
+  );
 }

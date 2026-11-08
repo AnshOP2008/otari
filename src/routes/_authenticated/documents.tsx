@@ -17,9 +17,12 @@ import { format, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
-import { refineTasksWithAI } from "@/lib/ai.functions";
-import { deleteDocument, listDocuments, uploadDocument } from "@/lib/documents.functions";
-
+import {
+  deleteDocument,
+  listDocuments,
+  searchKnowledge,
+  uploadDocument,
+} from "@/lib/documents.functions";
 
 export const Route = createFileRoute("/_authenticated/documents")({
   head: () => ({
@@ -66,7 +69,9 @@ function DocumentsPage() {
   const list = useServerFn(listDocuments);
   const upload = useServerFn(uploadDocument);
   const del = useServerFn(deleteDocument);
-  const refine = useServerFn(refineTasksWithAI);
+  const search = useServerFn(searchKnowledge);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchMut = useMutation({ mutationFn: (query: string) => search({ data: { query } }) });
 
   const inputRef = useRef<HTMLInputElement>(null);
   const progressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -84,6 +89,12 @@ function DocumentsPage() {
   });
 
   const docs = docsQuery.data ?? [];
+  useEffect(
+    () => () => {
+      if (progressPollRef.current) clearInterval(progressPollRef.current);
+    },
+    [],
+  );
 
   const stopProgressPolling = () => {
     if (progressPollRef.current) {
@@ -105,7 +116,9 @@ function DocumentsPage() {
     }
 
     if (data) {
-      setUploadProgress(data);
+      setUploadProgress((current) =>
+        current?.id === data.id && current.updated_at > data.updated_at ? current : data,
+      );
     }
   };
 
@@ -133,7 +146,8 @@ function DocumentsPage() {
           message: "Cancel requested...",
           updated_at: new Date().toISOString(),
         })
-        .eq("id", uploadProgress.id);
+        .eq("id", uploadProgress.id)
+        .eq("status", "running");
 
       if (error) {
         throw new Error(error.message);
@@ -193,27 +207,9 @@ function DocumentsPage() {
 
         const base64 = await fileToBase64(file);
         const res = await upload({ data: { name: file.name, base64, progressId } });
+        await fetchProgress(progressId);
         toast.success(`Indexed ${res.name} (${res.chunks} chunks).`);
         qc.invalidateQueries({ queryKey: ["documents"] });
-
-        setUploadProgress((current) =>
-          current
-            ? {
-                ...current,
-                status: "running",
-                stage: "updating_tasks",
-                message: "Updating tasks from the new document and recent chat...",
-              }
-            : current,
-        );
-
-        const refined = await refine();
-        await qc.invalidateQueries({ queryKey: ["tasks"] });
-        await qc.invalidateQueries({ queryKey: ["task-summary"] });
-        toast.success(`Tasks updated from ${res.name}`, {
-          description: refined.summary,
-          duration: 6000,
-        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Upload failed";
         if (message.toLowerCase().includes("cancel")) {
@@ -296,6 +292,58 @@ function DocumentsPage() {
           </div>
         </div>
       </div>
+
+      <section className="mt-6 card-soft p-4">
+        <h2 className="text-xl">Search sources</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Preview the passages chat can retrieve. Searches use no AI credits.
+        </p>
+        <form
+          className="mt-3 flex flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!searchMut.isPending && searchQuery.trim().length >= 2)
+              searchMut.mutate(searchQuery.trim());
+          }}
+        >
+          <input
+            aria-label="Search query"
+            value={searchQuery}
+            maxLength={300}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Try a deadline, project name, or phrase"
+            className="min-w-48 flex-1 rounded-md border bg-background px-3 py-2 text-sm"
+          />
+          <Button type="submit" disabled={searchMut.isPending || searchQuery.trim().length < 2}>
+            Search
+          </Button>
+        </form>
+        {searchMut.error && (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {searchMut.error.message}
+          </p>
+        )}
+        {searchMut.data && (
+          <div className="mt-3 space-y-2" role="status">
+            <p className="text-xs text-muted-foreground">
+              {searchMut.data.length
+                ? `${searchMut.data.length} matching passages`
+                : "No matching passages."}
+            </p>
+            {searchMut.data.map((source) => (
+              <details
+                key={source.id + ":" + source.section}
+                className="rounded-md border p-2 text-sm"
+              >
+                <summary className="cursor-pointer">
+                  {source.name} · section {source.section}
+                </summary>
+                <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{source.excerpt}</p>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
 
       {(uploading || uploadProgress) && (
         <div className="mt-6 card-soft p-4">

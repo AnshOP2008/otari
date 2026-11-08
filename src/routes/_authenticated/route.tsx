@@ -1,6 +1,15 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Menu, FileText, ListTodo, LogOut, MessageCircle, Brain, Shield } from "lucide-react";
+import {
+  Menu,
+  FileText,
+  ListTodo,
+  LogOut,
+  MessageCircle,
+  Brain,
+  ClipboardList,
+  Plug,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,9 +25,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 
 const navItems = [
   { to: "/home", label: "Tasks", icon: ListTodo },
+  { to: "/", label: "Planning Desk", icon: ClipboardList },
   { to: "/documents", label: "KnowledgeBase", icon: Brain },
   { to: "/chat", label: "Chat", icon: MessageCircle },
-  // { to: "/permissions", label: "Permissions", icon: Shield },
+  { to: "/permissions", label: "Integrations", icon: Plug },
   { to: "/documentation", label: "Documentation", icon: FileText },
 ] as const;
 
@@ -74,32 +84,10 @@ function AuthedLayout() {
               </PopoverTrigger>
 
               <PopoverContent align="start" className="w-md max-w-[calc(100vw-2rem)] text-sm">
-                <h4 className="mb-2 font-semibold">Implementation Note</h4>
-
+                <h4 className="mb-2 font-semibold">AI services</h4>
                 <p>
-                  This project uses a single free-tier Google AI API for all AI-powered features,
-                  including task generation, task refinement, AI chat, embeddings, and etc.
+                  TaskBase uses Mozilla Otari for AI generation. Source search runs in your database and uses no AI credits.
                 </p>
-
-                <p className="mt-3">
-                  Due to free-tier limits and periods of high demand (which I have observed to be
-                  fairly frequent), the provider may temporarily return
-                  <strong> 503 Service Unavailable </strong>
-                  responses. The backend automatically retries these requests with exponential
-                  backoff before reporting a failure, so some operations may take several
-                  minutes—occasionally up to <strong>10 minutes</strong>.
-                </p>
-
-                <p className="mt-3">
-                  This is an infrastructure limitation rather than an application issue. All
-                  implemented features have been thoroughly tested and work reliably once the
-                  upstream AI service responds.
-                </p>
-                <p>See Documentation for Details</p>
-                {/* <p>
-                  Some AI operations may take several minutes during periods of high service demand.
-                  See Documentation for details.
-                </p> */}
               </PopoverContent>
             </Popover>
           </div>

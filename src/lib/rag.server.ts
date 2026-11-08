@@ -1,43 +1,36 @@
-import { embedTexts } from "./gemini.server";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
+import { excerptForQuery, searchTerms } from "./document-text";
 
-export async function retrieveContext(
-  supabase: unknown,
+export async function retrieveSources(
+  supabase: SupabaseClient<Database>,
   query: string,
-  matchCount = 5,
-): Promise<string> {
-  if (!query.trim()) {
-    return "";
-  }
+  options: { limit?: number; overview?: boolean; sourceId?: string } = {},
+) {
+  const { data, error } = await supabase.rpc("search_documents", {
+    search_terms: searchTerms(query),
+    search_phrase: query.trim().slice(0, 200),
+    result_limit: options.limit ?? 6,
+    overview: options.overview ?? false,
+    ...(options.sourceId ? { source_id: options.sourceId } : {}),
+  });
+  if (error)
+    throw new Error("Could not search the knowledge base. Check that the database is up to date.");
+  return data.map((row, index) => ({
+    number: index + 1,
+    id: row.document_id,
+    name: row.name,
+    section: row.chunk_index + 1,
+    excerpt: excerptForQuery(row.content, query),
+  }));
+}
 
-  try {
-    console.log("[rag] generating query embedding");
-    const vectorArray = await embedTexts([query]);
-    const vector = vectorArray.length > 0 ? vectorArray[0] : [];
-    const sb = supabase as {
-      rpc: (
-        fn: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: unknown; error: unknown }>;
-    };
+export type Source = Awaited<ReturnType<typeof retrieveSources>>[number];
 
-    console.log("[rag] performing similarity search");
-    const { data, error } = await sb.rpc("match_document_chunks", {
-      query_embedding: vector as unknown as string,
-      match_count: matchCount,
-    });
-
-    if (error || !data) {
-      if (error) {
-        console.warn("[rag] similarity search failed", error);
-      }
-      return "";
-    }
-
-    return (data as { content: string }[])
-      .map((row, index) => `[${index + 1}] ${row.content}`)
-      .join("\n\n");
-  } catch (error) {
-    console.warn("[rag] retrieveContext failed:", (error as Error).message);
-    return "";
-  }
+export function formatSources(sources: Source[]) {
+  return sources
+    .map(
+      ({ number, name, section, excerpt }) => `[${number}] ${name}, section ${section}\n${excerpt}`,
+    )
+    .join("\n\n");
 }

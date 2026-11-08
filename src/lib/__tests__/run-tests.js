@@ -90,7 +90,7 @@ async function testGlobalBusyState() {
 async function testFileHandlingAndTextChunking() {
   console.log("Test Case 3: Testing File Chunking and KB Sync normalization...");
 
-  const { normalizeText, chunkText } = await import("../documents.functions.ts");
+  const { normalizeText, chunkText } = await import("../document-text.ts");
 
   const testText = "Line 1\r\nLine 2\n\n\nLine 3";
   const normalized = normalizeText(testText);

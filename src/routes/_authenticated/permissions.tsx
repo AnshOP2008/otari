@@ -1,228 +1,314 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Calendar, Mail, CheckCircle2, XCircle, Info, Sparkles, ShieldCheck } from "lucide-react";
+import { Calendar, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { listDocuments } from "@/lib/documents.functions";
+import { listTasks } from "@/lib/tasks.functions";
 import {
-  getGooglePermissions,
-  setCalendarPermission,
-  setGmailPermission,
-} from "@/lib/google-permissions";
-import { removeIntegrationDoc } from "@/lib/google.functions";
+  downloadCalendarTask,
+  exportCalendarTask,
+  removeIntegrationDoc,
+  syncAll,
+  syncCalendar,
+  syncGmail,
+} from "@/lib/google.functions";
 
 export const Route = createFileRoute("/_authenticated/permissions")({
-  head: () => ({
-    meta: [
-      { title: "Permissions - TaskBase" },
-      { name: "description", content: "Manage Google Calendar and Gmail integrations." },
-    ],
-  }),
-  component: PermissionsPage,
+  head: () => ({ meta: [{ title: "Google integrations - TaskBase" }] }),
+  component: Integrations,
 });
 
-function PermissionsPage() {
-  const queryClient = useQueryClient();
-  const removeDoc = useServerFn(removeIntegrationDoc);
+const scopes = {
+  calendar: "https://www.googleapis.com/auth/calendar.readonly",
+  gmail: "https://www.googleapis.com/auth/gmail.readonly",
+  export: "https://www.googleapis.com/auth/calendar.events",
+};
 
-  const [permissions, setPermissions] = useState({ calendar: false, gmail: false });
+function Integrations() {
+  const { user } = Route.useRouteContext();
+  const qc = useQueryClient();
+  const loadDocs = useServerFn(listDocuments);
+  const loadTasks = useServerFn(listTasks);
+  const calendar = useServerFn(syncCalendar);
+  const gmail = useServerFn(syncGmail);
+  const both = useServerFn(syncAll);
+  const remove = useServerFn(removeIntegrationDoc);
+  const exportTask = useServerFn(exportCalendarTask);
+  const downloadTask = useServerFn(downloadCalendarTask);
+  const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => loadDocs() });
+  const { data: tasks = [] } = useQuery({ queryKey: ["tasks"], queryFn: () => loadTasks() });
+  const eligible = tasks.filter((task) => task.due_date && task.status !== "done");
+  const [taskId, setTaskId] = useState("");
+  const [calendarFile, setCalendarFile] = useState<{ taskId: string; url: string } | null>(null);
+  const [days, setDays] = useState(14);
+  const [maxEmails, setMaxEmails] = useState(10);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const local = /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(
+    import.meta.env.VITE_SUPABASE_URL || "",
+  );
 
-  useEffect(() => {
-    setPermissions(getGooglePermissions());
-  }, []);
-
-  const removeDocMut = useMutation({
-    mutationFn: (filename: string) => removeDoc({ data: { filename } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["documents"] });
+  const connect = useMutation({
+    mutationFn: async (scope: keyof typeof scopes | "all") => {
+      sessionStorage.setItem("taskbase-google-connect", user.id);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin + "/auth/callback",
+          scopes: scope === "all" ? scopes.calendar + " " + scopes.gmail : scopes[scope],
+          queryParams: { include_granted_scopes: "true", prompt: "consent" },
+        },
+      });
+      if (error) {
+        sessionStorage.removeItem("taskbase-google-connect");
+        throw error;
+      }
     },
-    onError: (err) => {
-      console.error("[Permissions] Failed to remove document from KB:", err);
-    },
+    onError: (error) => toast.error(error.message),
   });
 
-  const toggleCalendar = async () => {
-    const nextVal = !permissions.calendar;
-    console.log(`[Permissions] Toggle Calendar triggered. Changing to ${nextVal}`);
-    if (nextVal) {
-      // Connect: initiate OAuth with calendar scopes
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: window.location.origin,
-          scopes: "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events",
-        },
-      });
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-      if (data?.url) {
-        window.location.assign(data.url);
-        return;
-      }
-    }
-    // Disconnect or after OAuth redirect handled elsewhere
-    setCalendarPermission(nextVal);
-    setPermissions((prev) => ({ ...prev, calendar: nextVal }));
-    if (!nextVal) {
-      // Cleanup KB file on disconnect
-      toast.promise(removeDocMut.mutateAsync("calendar!@#.txt"), {
-        loading: "Removing calendar source file from Knowledge Base...",
-        success: "Calendar source file removed from Knowledge Base",
-        error: "Failed to remove calendar file from Knowledge Base",
-      });
-    }
-  };
+  async function getToken() {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.provider_token)
+      throw new Error("Connect the Google permission for this action first.");
+    return data.session.provider_token;
+  }
 
-  const toggleGmail = async () => {
-    const nextVal = !permissions.gmail;
-    console.log(`[Permissions] Toggle Gmail triggered. Changing to ${nextVal}`);
-    if (nextVal) {
-      // Connect: initiate OAuth with Gmail read scope
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: window.location.origin,
-          scopes: "https://www.googleapis.com/auth/gmail.readonly",
-        },
-      });
-      if (error) {
-        toast.error(error.message);
-        return;
+  const sync = useMutation({
+    mutationFn: async (service: "calendar" | "gmail" | "all") => {
+      const data = { accessToken: await getToken(), days, maxEmails, unreadOnly };
+      if (service === "all") return both({ data });
+      const result = await (service === "calendar" ? calendar : gmail)({ data });
+      return [{ service: service === "calendar" ? "Calendar" : "Gmail", ...result, error: null }];
+    },
+    onSuccess: (results) => {
+      void qc.invalidateQueries({ queryKey: ["documents"] });
+      for (const result of results) {
+        if (result.error) toast.error(result.error);
+        else toast.success(`${result.service}: imported ${result.imported} items`);
       }
-      if (data?.url) {
-        window.location.assign(data.url);
-        return;
-      }
-    }
-    // Disconnect or after OAuth redirect handled elsewhere
-    setGmailPermission(nextVal);
-    setPermissions((prev) => ({ ...prev, gmail: nextVal }));
-    if (!nextVal) {
-      // Cleanup KB file on disconnect
-      toast.promise(removeDocMut.mutateAsync("gmail!@#.txt"), {
-        loading: "Removing Gmail source file from Knowledge Base...",
-        success: "Gmail source file removed from Knowledge Base",
-        error: "Failed to remove Gmail file from Knowledge Base",
-      });
-    }
-  };
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
+  const forget = useMutation({
+    mutationFn: (filename: "calendar!@#.txt" | "gmail!@#.txt") => remove({ data: { filename } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["documents"] });
+      toast.success("Removed the imported copy from TaskBase.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const publish = useMutation({
+    mutationFn: async () => exportTask({ data: { accessToken: await getToken(), taskId } }),
+    onSuccess: ({ updated }) =>
+      toast.success(updated ? "Updated your Calendar event." : "Created your Calendar event."),
+    onError: (error) => toast.error(error.message),
+  });
+
+  const download = useMutation({
+    mutationFn: async () => {
+      const text = await downloadTask({ data: { taskId } });
+      const url = URL.createObjectURL(new Blob([text], { type: "text/calendar;charset=utf-8" }));
+      setCalendarFile({ taskId, url });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  useEffect(() => {
+    return () => {
+      if (calendarFile) URL.revokeObjectURL(calendarFile.url);
+    };
+  }, [calendarFile]);
+
+  const hasTask = eligible.some((task) => task.id === taskId);
+  const busy =
+    connect.isPending ||
+    sync.isPending ||
+    forget.isPending ||
+    publish.isPending ||
+    download.isPending;
   return (
-    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
-      <div className="min-w-0">
-        <h1 className="text-3xl font-semibold tracking-tight">Permissions</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Manage your external integrations and connection status.
+    <main className="mx-auto max-w-5xl px-5 py-8">
+      <h1 className="text-3xl font-semibold">Google integrations</h1>
+      <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+        Choose what to import into your knowledge base. Importing does not spend AI credits. Chat
+        uses your imported sources only when source search is enabled.
+      </p>
+      {local && (
+        <p className="mt-4 rounded-lg border bg-card p-3 text-sm">
+          Google OAuth is unavailable in this local workspace. Upload sample notes to test the same
+          search and planning features.
         </p>
-      </div>
+      )}
 
-      {/* Connection Info Panel */}
-      <div className="mt-5 rounded-lg border border-border bg-card p-4">
-        <div className="flex items-start gap-3">
-          <Sparkles className="h-5 w-5 shrink-0 text-primary mt-0.5" />
-          <div className="text-sm">
-            <span className="font-semibold block mb-1">Permission Manager Workflow</span>
-            <span className="text-muted-foreground">
-              These settings manage connection setup and consent keys. Connecting a service grants access tokens for subsequent sync requests. Disconnecting revokes access tokens immediately and clean-sweeps any synced files from active retrieval/indexing. No data is fetched or transmitted on this page.
-            </span>
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <section className="card-soft space-y-4 p-5">
+          <h2 className="flex items-center gap-2 text-2xl">
+            <Calendar size={20} /> Calendar import
+          </h2>
+          <label className="block text-sm">
+            Look ahead
+            <select
+              value={days}
+              onChange={(event) => setDays(Number(event.target.value))}
+              className="ml-2 rounded border bg-background p-1"
+            >
+              {[7, 14, 30, 60].map((value) => (
+                <option key={value} value={value}>
+                  {value} days
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={busy || local}
+              onClick={() => connect.mutate("calendar")}
+            >
+              Allow Calendar read
+            </Button>
+            <Button disabled={busy || local} onClick={() => sync.mutate("calendar")}>
+              Import events
+            </Button>
           </div>
-        </div>
-      </div>
+          <Snapshot
+            name="calendar!@#.txt"
+            documents={documents}
+            onRemove={() => forget.mutate("calendar!@#.txt")}
+            busy={busy}
+          />
+        </section>
 
-      <div className="mt-6 grid gap-6 sm:grid-cols-2">
-        {/* Google Calendar Card */}
-        <Card className="glassmorphism-card border border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <div className="space-y-1">
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-primary" />
-                Google Calendar
-              </CardTitle>
-              <CardDescription>
-                Sync milestones, events, and reminders to/from your task board.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-2">
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2">
-                {permissions.calendar ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Connected
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground border border-border">
-                    <XCircle className="h-3.5 w-3.5" />
-                    Not Connected
-                  </span>
-                )}
-              </div>
-              <Button
-                variant={permissions.calendar ? "destructive" : "default"}
-                onClick={toggleCalendar}
-                className="w-28"
-              >
-                {permissions.calendar ? "Disconnect" : "Connect"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Gmail Card */}
-        <Card className="glassmorphism-card border border-border">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <div className="space-y-1">
-              <CardTitle className="text-xl flex items-center gap-2">
-                <Mail className="h-5 w-5 text-primary" />
-                Gmail Read Access
-              </CardTitle>
-              <CardDescription>
-                Index recent emails to search and extract actionable planning insights.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-2">
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2">
-                {permissions.gmail ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Connected
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground border border-border">
-                    <XCircle className="h-3.5 w-3.5" />
-                    Not Connected
-                  </span>
-                )}
-              </div>
-              <Button
-                variant={permissions.gmail ? "destructive" : "default"}
-                onClick={toggleGmail}
-                className="w-28"
-              >
-                {permissions.gmail ? "Disconnect" : "Connect"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="mt-8 rounded-lg border border-dashed border-border p-5 bg-muted/30">
-        <div className="flex gap-3">
-          <Info className="h-5 w-5 shrink-0 text-muted-foreground mt-0.5" />
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            All connection flows conform to secure OAuth credential protocols. We do not store your plain Google account password. Access tokens are used securely for client-scoped operations. Revoking credentials here will stop any future synchronizations and invalidate existing access.
+        <section className="card-soft space-y-4 p-5">
+          <h2 className="flex items-center gap-2 text-2xl">
+            <Mail size={20} /> Gmail import
+          </h2>
+          <label className="block text-sm">
+            Inbox messages
+            <select
+              value={maxEmails}
+              onChange={(event) => setMaxEmails(Number(event.target.value))}
+              className="ml-2 rounded border bg-background p-1"
+            >
+              {[5, 10, 20].map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={unreadOnly}
+              onChange={(event) => setUnreadOnly(event.target.checked)}
+            />{" "}
+            Unread only
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Imports sender, subject, date and preview. No attachments or email sending.
           </p>
-        </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={busy || local}
+              onClick={() => connect.mutate("gmail")}
+            >
+              Allow Gmail read
+            </Button>
+            <Button disabled={busy || local} onClick={() => sync.mutate("gmail")}>
+              Import inbox
+            </Button>
+          </div>
+          <Snapshot
+            name="gmail!@#.txt"
+            documents={documents}
+            onRemove={() => forget.mutate("gmail!@#.txt")}
+            busy={busy}
+          />
+        </section>
       </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button variant="outline" disabled={busy || local} onClick={() => connect.mutate("all")}>
+          Allow both imports
+        </Button>
+        <Button variant="outline" disabled={busy || local} onClick={() => sync.mutate("all")}>
+          Import both
+        </Button>
+      </div>
+
+      <section className="card-soft mt-6 space-y-4 p-5">
+        <h2 className="text-2xl">Send one task to Calendar</h2>
+        <p className="text-sm text-muted-foreground">
+          Creates an all-day event on the due date. Sending the same task again updates its event.
+        </p>
+        <label className="block text-sm">
+          Task
+          <select
+            value={taskId}
+            onChange={(event) => setTaskId(event.target.value)}
+            className="ml-2 max-w-full rounded border bg-background p-1"
+          >
+            <option value="">Choose a dated open task</option>
+            {eligible.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.title} · {task.due_date}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={busy || local}
+            onClick={() => connect.mutate("export")}
+          >
+            Allow Calendar write
+          </Button>
+          <Button disabled={busy || local || !hasTask} onClick={() => publish.mutate()}>
+            Send selected task
+          </Button>
+          <Button variant="outline" disabled={busy || !hasTask} onClick={() => download.mutate()}>
+            Prepare calendar file
+          </Button>
+          {hasTask && calendarFile?.taskId === taskId && (
+            <Button variant="outline" asChild>
+              <a href={calendarFile.url} download="taskbase-task.ics">
+                Download calendar file
+              </a>
+            </Button>
+          )}
+        </div>
+      </section>
     </main>
+  );
+}
+
+function Snapshot({
+  name,
+  documents,
+  onRemove,
+  busy,
+}: {
+  name: string;
+  documents: Awaited<ReturnType<typeof listDocuments>>;
+  onRemove: () => void;
+  busy: boolean;
+}) {
+  const doc = documents.find((entry) => entry.name === name && entry.status === "ready");
+  if (!doc) return <p className="text-xs text-muted-foreground">No imported snapshot.</p>;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <span>Imported {new Date(doc.created_at).toLocaleString()}</span>
+      <Button variant="ghost" size="sm" disabled={busy} onClick={onRemove}>
+        Remove imported copy
+      </Button>
+    </div>
   );
 }

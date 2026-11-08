@@ -1,137 +1,120 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { ShieldAlert } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/auth")({
-  head: () => ({
-    meta: [
-      { title: "Sign in - TaskBase" },
-      {
-        name: "description",
-        content: "TaskBase sign in page",
-      },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "Sign in - TaskBase" }] }),
   component: AuthPage,
 });
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const local = /^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(
+    import.meta.env.VITE_SUPABASE_URL || "",
+  );
 
-  useEffect(() => {
-    // Check if redirected here due to missing permissions
-    if (
-      typeof window !== "undefined" &&
-      (window.location.search.includes("permissions_required") ||
-        localStorage.getItem("google_permission_error") === "true")
-    ) {
-      setShowPermissionModal(true);
-    } else {
-      supabase.auth.getUser().then(({ data }) => {
-        if (data.user) {
-          navigate({ to: "/home" });
-        }
+  async function google() {
+    setPending(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin + "/auth/callback" },
       });
+      if (error) throw error;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not start Google sign-in.");
+      setPending(false);
     }
-  }, [navigate]);
+  }
 
-  const google = async () => {
-    const callbackUrl = `${window.location.origin}/auth/callback`;
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: callbackUrl,
-        scopes:
-          "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.events",
-        queryParams: {
-          access_type: "offline",
-          prompt: "consent",
-        },
-      },
-    });
-
-    if (error) {
-      toast.error(error.message);
-      return;
+  async function emailAuth(create = false) {
+    setPending(true);
+    try {
+      const { data, error } = create
+        ? await supabase.auth.signUp({ email, password })
+        : await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      if (data.session) await navigate({ to: "/home" });
+      else toast.info("Check your email to confirm your account.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sign in.");
+    } finally {
+      setPending(false);
     }
-
-    if (data?.url) {
-      window.location.assign(data.url);
-      return;
-    }
-
-    navigate({ to: "/home" });
-  };
-
-  const handleGrantPermissionsOk = () => {
-    setShowPermissionModal(false);
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem("google_permission_error");
-    }
-    if (typeof window !== "undefined") {
-      window.history.replaceState({}, "", "/auth");
-    }
-    google();
-  };
+  }
 
   return (
-    <main className="min-h-screen px-4 py-12">
-      <div className="mx-auto flex min-h-[calc(100vh-6rem)] w-full max-w-md items-center">
-        <div className="card-soft w-full p-6 sm:p-8">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">TaskBase</h1>
-            <p className="text-sm text-muted-foreground">
-              AI-powered task management with an integrated knowledge base and intelligent chat.
-            </p>
-          </div>
-
-          <Button
-            onClick={google}
-            variant="outline"
-            className="mt-6 w-full flex items-center justify-center gap-2"
-          >
+    <main className="mx-auto flex min-h-screen max-w-md items-center px-4 py-12">
+      <div className="card-soft w-full space-y-4 p-6 sm:p-8">
+        <Link to="/" className="text-sm underline">
+          Back to Planning Desk
+        </Link>
+        <h1 className="text-3xl font-semibold">Sign in to TaskBase</h1>
+        <p className="text-sm text-muted-foreground">
+          Upload sources, chat with your workspace, and save tasks to your board.
+        </p>
+        {!local && (
+          <Button onClick={google} disabled={pending} variant="outline" className="w-full">
             Continue with Google
           </Button>
-        </div>
-      </div>
-
-      {/* Permissions Required Overlay Modal */}
-      <Dialog open={showPermissionModal} onOpenChange={setShowPermissionModal}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <ShieldAlert className="h-5 w-5" /> All Permissions Required
-            </DialogTitle>
-            <DialogDescription className="pt-3 text-sm text-foreground space-y-2">
-              <p>
-                To use TaskBase, you must grant <strong>all requested permissions</strong> for
-                Google Calendar and Gmail when logging in.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Without these permissions, TaskBase cannot fetch events, read emails, or push
-                updated task dates back to your calendar.
-              </p>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-4 sm:justify-end">
-            <Button onClick={handleGrantPermissionsOk} className="w-full sm:w-auto">
-              OK, Grant Permissions
+        )}
+        {local && (
+          <p className="text-sm text-muted-foreground">
+            Local workspace. Use an email account for this device.
+          </p>
+        )}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void emailAuth();
+          }}
+          className="space-y-3"
+        >
+          <label className="block text-sm">
+            Email
+            <Input
+              autoComplete="email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </label>
+          <label className="block text-sm">
+            Password
+            <Input
+              autoComplete="current-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+          <Button type="submit" disabled={pending} className="w-full">
+            Sign in with email
+          </Button>
+          {local && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending || !email || password.length < 8}
+              className="w-full"
+              onClick={(event) => {
+                const form = event.currentTarget.form;
+                if (form?.reportValidity()) void emailAuth(true);
+              }}
+            >
+              Create local account
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          )}
+        </form>
+      </div>
     </main>
   );
 }

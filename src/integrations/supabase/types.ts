@@ -1,5 +1,18 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
+type UploadProgress = {
+  id: string;
+  user_id: string;
+  status: "running" | "cancel_requested" | "cancelled" | "completed" | "failed";
+  stage: string;
+  message: string;
+  current: number;
+  total: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -8,8 +21,15 @@ export type Database = {
   };
   public: {
     Tables: {
+      upload_progress: {
+        Row: UploadProgress;
+        Insert: Pick<UploadProgress, "user_id"> & Partial<Omit<UploadProgress, "user_id">>;
+        Update: Partial<UploadProgress>;
+        Relationships: [];
+      };
       chat_messages: {
         Row: {
+          source_refs: Json;
           content: string;
           created_at: string;
           id: string;
@@ -17,6 +37,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
+          source_refs?: Json;
           content: string;
           created_at?: string;
           id?: string;
@@ -24,6 +45,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
+          source_refs?: Json;
           content?: string;
           created_at?: string;
           id?: string;
@@ -156,6 +178,26 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      append_suggested_tasks: { Args: { suggestions: Json }; Returns: number };
+      search_documents: {
+        Args: {
+          search_terms: string[];
+          search_phrase: string;
+          result_limit?: number;
+          overview?: boolean;
+          source_id?: string;
+        };
+        Returns: { document_id: string; name: string; chunk_index: number; content: string }[];
+      };
+      store_document: {
+        Args: {
+          document_name: string;
+          chunks: string[];
+          replace_existing?: boolean;
+          progress_id?: string;
+        };
+        Returns: string;
+      };
       match_document_chunks: {
         Args: { match_count?: number; query_embedding: string };
         Returns: {

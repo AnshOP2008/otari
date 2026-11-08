@@ -1,6 +1,5 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useEffect } from "react";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -45,13 +44,7 @@ import {
   startOfWeek,
 } from "date-fns";
 
-import {
-  AgentTimeline,
-  REFINE_STEPS,
-  CALENDAR_SYNC_STEPS,
-  GMAIL_SYNC_STEPS,
-  UPDATE_ALL_STEPS,
-} from "@/components/ai/agent-timeline";
+import { AgentTimeline, REFINE_STEPS } from "@/components/ai/agent-timeline";
 import { TaskCard, type Task } from "@/components/tasks/task-card";
 import { TaskEditor, type TaskDraft } from "@/components/tasks/task-editor";
 import { Button } from "@/components/ui/button";
@@ -66,27 +59,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import {
-  getGooglePermissions,
-  hasSeenPermissionPrompt,
-  markPermissionPromptSeen,
-  setCalendarPermission,
-  setGmailPermission,
-} from "@/lib/google-permissions";
-import { syncCalendar, syncGmail, syncAll, cleanOldIntegrationDocs } from "@/lib/google.functions";
-import { supabase } from "@/integrations/supabase/client";
-import { useGlobalBusy } from "@/lib/global-busy";
-import { ShieldCheck, Calendar, Mail } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/home")({
   head: () => ({
@@ -143,60 +115,6 @@ function HomePage() {
   const reorder = useServerFn(reorderTasks);
   const refine = useServerFn(refineTasksWithAI);
   const summarize = useServerFn(getTaskSummary);
-
-  const syncCalendarFn = useServerFn(syncCalendar);
-  const syncGmailFn = useServerFn(syncGmail);
-  const syncAllFn = useServerFn(syncAll);
-  const cleanOldDocsFn = useServerFn(cleanOldIntegrationDocs);
-
-  // First login permissions setup modal states
-  const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
-  const [promptCalendarVal, setPromptCalendarVal] = useState(false);
-  const [promptGmailVal, setPromptGmailVal] = useState(false);
-
-  useEffect(() => {
-    if (!hasSeenPermissionPrompt()) {
-      console.log("[Home] First visit detected: launching optional permissions modal");
-      toast.message("Optional Google Setup Available");
-      setShowPermissionPrompt(true);
-    }
-  }, []);
-
-  // One-time cleanup of old fake/hardcoded KB docs that previous sessions may have created
-  useEffect(() => {
-    const CLEANUP_KEY = "kb_integration_cleaned_v1";
-    if (!localStorage.getItem(CLEANUP_KEY)) {
-      console.log("[Home] Running one-time KB cleanup for old integration docs...");
-      cleanOldDocsFn()
-        .then(() => {
-          localStorage.setItem(CLEANUP_KEY, "1");
-          console.log("[Home] Old integration docs cleaned successfully");
-        })
-        .catch((err: Error) => {
-          console.warn("[Home] KB cleanup failed (non-fatal):", err.message);
-        });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleSavePrompt = () => {
-    console.log(`[Home] Saved permissions: Calendar=${promptCalendarVal}, Gmail=${promptGmailVal}`);
-    setCalendarPermission(promptCalendarVal);
-    setGmailPermission(promptGmailVal);
-    markPermissionPromptSeen();
-    setShowPermissionPrompt(false);
-  };
-
-  const handleSkipPrompt = () => {
-    console.log("[Home] Skipped permissions setup prompt");
-    setCalendarPermission(false);
-    setGmailPermission(false);
-    markPermissionPromptSeen();
-    setShowPermissionPrompt(false);
-    toast.info("Connection setup skipped");
-  };
-
-  const connections = getGooglePermissions();
 
   const [section, setSection] = useState<Section>("all");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -302,7 +220,6 @@ function HomePage() {
 
   const refineMut = useMutation({
     mutationFn: async () => {
-      setActiveSyncAction("refine");
       console.log("[Home] Starting plain task refinement workflow");
       toast.info("Analyzing tasks and documents...");
       return await refine();
@@ -327,140 +244,9 @@ function HomePage() {
     },
   });
 
-  const calendarSyncMut = useMutation({
-    mutationFn: async () => {
-      setActiveSyncAction("calendar");
-      setSummaryOpen(true);
-      console.log("[Home] Starting calendar sync workflow");
-      toast.info("Connecting Google Calendar API & fetching events...");
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const accessToken = session?.provider_token ?? "";
-      if (!accessToken) {
-        throw new Error(
-          "Google access token not available. Please reconnect via the Permissions page.",
-        );
-      }
-      return await syncCalendarFn({ data: { accessToken } });
-    },
-    onSuccess: (result) => {
-      invalidateTasks();
-      const ref = result.refinement;
-      const parts = [];
-      if (ref.changes.added) parts.push(`${ref.changes.added} added`);
-      if (ref.changes.removed) parts.push(`${ref.changes.removed} removed`);
-      parts.push(`${ref.count} total`);
+  const isBusy = refineMut.isPending;
+  const busyLabel = isBusy ? "Finding tasks supported by your sources…" : "";
 
-      toast.success(`Calendar Synced! Tasks updated: ${parts.join(", ")}`, {
-        description: `${ref.summary}. Pushed ${result.pushedCount} events back.`,
-        duration: 6000,
-      });
-      setLastRefineSummary(
-        `${ref.summary}. Pushed ${result.pushedCount} events back to Google Calendar.`,
-      );
-      summaryQuery.refetch();
-    },
-    onError: (error) => {
-      console.error("[Home] Calendar sync error:", error);
-      toast.error((error as Error).message);
-    },
-  });
-
-  const gmailSyncMut = useMutation({
-    mutationFn: async () => {
-      setActiveSyncAction("gmail");
-      setSummaryOpen(true);
-      console.log("[Home] Starting Gmail sync workflow");
-      toast.info("Connecting Gmail API & fetching latest 20 emails...");
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const accessToken = session?.provider_token ?? "";
-      if (!accessToken) {
-        throw new Error(
-          "Google access token not available. Please reconnect via the Permissions page.",
-        );
-      }
-      return await syncGmailFn({ data: { accessToken } });
-    },
-    onSuccess: (result) => {
-      invalidateTasks();
-      const ref = result.refinement;
-      const parts = [];
-      if (ref.changes.added) parts.push(`${ref.changes.added} added`);
-      if (ref.changes.removed) parts.push(`${ref.changes.removed} removed`);
-      parts.push(`${ref.count} total`);
-
-      toast.success(`Gmail Synced! Tasks updated: ${parts.join(", ")}`, {
-        description: ref.summary,
-        duration: 6000,
-      });
-      setLastRefineSummary(ref.summary);
-      summaryQuery.refetch();
-    },
-    onError: (error) => {
-      console.error("[Home] Gmail sync error:", error);
-      toast.error((error as Error).message);
-    },
-  });
-
-  const updateAllMut = useMutation({
-    mutationFn: async () => {
-      setActiveSyncAction("all");
-      setSummaryOpen(true);
-      console.log("[Home] Starting combined sync workflow");
-      toast.info("Connecting Google APIs & fetching Calendar/Gmail updates...");
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const accessToken = session?.provider_token ?? "";
-      if (!accessToken) {
-        throw new Error(
-          "Google access token not available. Please reconnect via the Permissions page.",
-        );
-      }
-      return await syncAllFn({ data: { accessToken } });
-    },
-    onSuccess: (result) => {
-      invalidateTasks();
-      const ref = result.refinement;
-      const parts = [];
-      if (ref.changes.added) parts.push(`${ref.changes.added} added`);
-      if (ref.changes.removed) parts.push(`${ref.changes.removed} removed`);
-      parts.push(`${ref.count} total`);
-
-      toast.success(`Calendar & Gmail Synced! Tasks updated: ${parts.join(", ")}`, {
-        description: `${ref.summary}. Pushed ${result.pushedCount} events back.`,
-        duration: 6000,
-      });
-      setLastRefineSummary(
-        `${ref.summary}. Pushed ${result.pushedCount} events back to Google Calendar.`,
-      );
-      summaryQuery.refetch();
-    },
-    onError: (error) => {
-      console.error("[Home] Update All sync error:", error);
-      toast.error((error as Error).message);
-    },
-  });
-  const isBusy =
-    refineMut.isPending ||
-    calendarSyncMut.isPending ||
-    gmailSyncMut.isPending ||
-    updateAllMut.isPending;
-  const busyLabel = refineMut.isPending
-    ? "Refining tasks..."
-    : calendarSyncMut.isPending
-      ? "Syncing Google Calendar..."
-      : gmailSyncMut.isPending
-        ? "Syncing Gmail..."
-        : updateAllMut.isPending
-          ? "Syncing Google Calendar & Gmail..."
-          : "";
-  const [activeSyncAction, setActiveSyncAction] = useState<"refine" | "calendar" | "gmail" | "all">(
-    "refine",
-  );
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -512,7 +298,7 @@ function HomePage() {
         <div className="min-w-0">
           <h1 className="text-3xl font-semibold tracking-tight">Tasks</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Plan the work, update it by hand, or let the assistant reorganize it.
+            Plan your work, edit tasks by hand, or find new tasks in your sources.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -535,46 +321,10 @@ function HomePage() {
                 className="flex items-center gap-2 cursor-pointer focus:bg-secondary"
               >
                 <Sparkles className="h-4 w-4 text-primary shrink-0" />
-                <span>Refine Tasks</span>
+                <span>Find New Tasks</span>
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => calendarSyncMut.mutate()}
-                disabled={isBusy || !connections.calendar}
-                className="flex items-center gap-2 cursor-pointer focus:bg-secondary"
-              >
-                <Calendar className="h-4 w-4 text-primary shrink-0" />
-                <span>Sync Calendar</span>
-                {!connections.calendar && (
-                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground ml-auto">
-                    Setup
-                  </span>
-                )}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => gmailSyncMut.mutate()}
-                disabled={isBusy || !connections.gmail}
-                className="flex items-center gap-2 cursor-pointer focus:bg-secondary"
-              >
-                <Mail className="h-4 w-4 text-primary shrink-0" />
-                <span>Sync Gmail</span>
-                {!connections.gmail && (
-                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground ml-auto">
-                    Setup
-                  </span>
-                )}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => updateAllMut.mutate()}
-                disabled={isBusy || !connections.calendar || !connections.gmail}
-                className="flex items-center gap-2 cursor-pointer focus:bg-secondary"
-              >
-                <Plus className="h-4 w-4 text-primary shrink-0" />
-                <span>Update All</span>
-                {(!connections.calendar || !connections.gmail) && (
-                  <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground ml-auto">
-                    Setup
-                  </span>
-                )}
+              <DropdownMenuItem asChild>
+                <Link to="/permissions">Google integrations</Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -668,18 +418,7 @@ function HomePage() {
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-3">
             {isBusy ? (
-              <AgentTimeline
-                steps={
-                  activeSyncAction === "refine"
-                    ? REFINE_STEPS
-                    : activeSyncAction === "calendar"
-                      ? CALENDAR_SYNC_STEPS
-                      : activeSyncAction === "gmail"
-                        ? GMAIL_SYNC_STEPS
-                        : UPDATE_ALL_STEPS
-                }
-                active={true}
-              />
+              <AgentTimeline steps={REFINE_STEPS} active />
             ) : (
               <div className="text-sm text-muted-foreground">
                 {lastRefineSummary ??
@@ -784,64 +523,6 @@ function HomePage() {
         initial={editing}
         onSubmit={handleSubmit}
       />
-
-      <Dialog open={showPermissionPrompt} onOpenChange={setShowPermissionPrompt}>
-        <DialogContent className="max-w-md bg-card border-border">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" />
-              Configure Integrations
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground">
-              Configure optional connections to your Google Calendar and Gmail. Setup is for consent
-              only and does NOT fetch any data.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 my-3">
-            <div className="flex items-start space-x-3 rounded-lg border border-border p-3">
-              <Checkbox
-                id="prompt-calendar"
-                checked={promptCalendarVal}
-                onCheckedChange={(checked) => setPromptCalendarVal(!!checked)}
-              />
-              <div className="grid gap-1.5 leading-none">
-                <Label htmlFor="prompt-calendar" className="text-sm font-medium cursor-pointer">
-                  Sync Google Calendar
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Fetch calendar entries and push refined tasks with dates back.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start space-x-3 rounded-lg border border-border p-3">
-              <Checkbox
-                id="prompt-gmail"
-                checked={promptGmailVal}
-                onCheckedChange={(checked) => setPromptGmailVal(!!checked)}
-              />
-              <div className="grid gap-1.5 leading-none">
-                <Label htmlFor="prompt-gmail" className="text-sm font-medium cursor-pointer">
-                  Index Gmail Messages
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Index latest 20 email subjects/senders for semantic planning retrieval.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={handleSkipPrompt} className="w-full sm:w-auto">
-              Skip setup
-            </Button>
-            <Button onClick={handleSavePrompt} className="w-full sm:w-auto">
-              Save connection
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </main>
   );
 }

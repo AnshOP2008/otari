@@ -6,3 +6,5 @@ build
 .env
 .env.*
 *.log
+supabase/.temp/
+supabase/.branches/

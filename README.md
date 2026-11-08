@@ -1,130 +1,49 @@
-# TaskBase — Project Documentation
+# TaskBase
 
-## 1. Project Overview
+TaskBase turns notes, a Gmail snapshot, and upcoming Calendar events into a task plan you can verify. Search the sources, ask a grounded question, review a two-model Otari plan, and save the tasks you choose.
 
-### What it does
+## Run locally
 
-TaskBase is an AI-native productivity task manager. Users sign in with Google, upload study/work documents (syllabi, briefs, notes), and the assistant transforms them into a prioritized, drag-and-drop task board. A built-in AI chat assistant has retrieval access to the user's uploaded documents and current tasks, while a one-click **Refine with AI** action can regenerate the entire board with explicit reasoning for every decision. Furthermore, TaskBase optionally integrates with Google Calendar and Gmail to sync your schedule and communications into actionable tasks.
+Requires Node.js 22.12+, the Supabase CLI, and Docker Desktop.
 
-### Problem Solved
+1. Run `npm ci` and `supabase start`. The local stack applies `supabase/migrations` to a fresh database. For an existing local database, run `supabase migration up --local`.
+2. Copy `.env.example` to `.env` if the file does not exist. Run `supabase status` and use the local API URL and publishable key for both the server and `VITE_` Supabase settings. Keep `.env` private.
+3. Run `npm run dev -- --host 127.0.0.1`. The landing-page example works without an account or an AI key. Choose **Sign in** and **Create local account** to use a separate, local workspace.
+4. In **KnowledgeBase**, upload `examples/repair-cafe-handoff.md`, then search for **volunteer briefings**. Try a text PDF, Markdown file, or plain text file under 8 MB. Scanned PDFs need a text layer.
 
-Generic to-do applications don't understand what users actually need to accomplish, while LLM chat applications don't maintain structured, persistent work. TaskBase bridges both worlds by ingesting source documents, extracting actionable tasks with priorities and deadlines, and explaining every AI-generated decision by referencing the supporting document or conversation. The result is an agentic planner that continuously restructures work based on the user's goals, instructions, schedule, and inbox.
+Uploads and source search use PostgreSQL and spend no model credits. Existing ready sources can be searched without re-uploading or regenerating embeddings. Local accounts and data are separate from the original hosted Supabase project.
 
----
+## Enable Google integrations
 
-## 2. How to Use
+For a hosted build, apply all migrations to the intended Supabase project, enable Google as a sign-in provider, and configure the Google Calendar and Gmail APIs for the OAuth client. Add the hosted app's `/auth/callback` URL to Supabase's allowed redirects. The Google consent screen must allow the account you're using. Follow [Supabase's Google configuration guide](https://supabase.com/docs/guides/auth/social-login/auth-google).
 
-1. Open the application and sign in using **Continue with Google**.
-2. Grant Google Calendar and Gmail permissions when prompted during sign-in to enable ecosystem syncing.
-3. Navigate to **Documents** and upload `.txt`, `.md`, or `.pdf` files.
-4. Wait until uploaded documents finish processing (`Ready` status).
-5. Use the **Sync & Refine** actions (Sync Calendar, Sync Gmail, or Update All) to ingest your latest emails and calendar events.
-6. Click **Refine with AI** to generate an optimized task board based on your documents, calendar, and emails.
-7. Review the AI summary, tags and individual reasoning for each generated task.
-8. Edit, reorder, complete, or delete tasks manually at any time. Any tasks with a due date will be automatically pushed back to your Google Calendar as all-day events.
-9. Open **Chat** to ask questions about your workload or request planning assistance. If the AI determines the board should change, it signals the UI to offer a task refinement.
-10. Drag and drop task cards to reorder them or toggle their completion status using the checkbox.
+Set the public Supabase URL and publishable key before building. Set the server-side environment variables on the host at runtime. Run `npm run build` and start the output with `node .output/server/index.mjs`.
 
----
+In **Integrations**, grant Calendar read access for event imports and Gmail read access for inbox previews. Calendar import can look ahead 7–60 days. Gmail import supports an unread-only filter and a 5–20 message limit. Imported snapshots can be removed from TaskBase. Chat citations are stored with their replies.
 
-## 3. Core Features
+For an outbound action, select a single dated task and choose **Send selected task** after granting Calendar write access. Sending the same task again updates its event. **Prepare calendar file** creates an .ics download that exports the selected task without Google OAuth.
 
-1. **Google Authentication & Permission Scopes**
-   - Secure sign-in using Supabase Auth.
-   - Strict OAuth scope validation ensuring required permissions (Calendar Read/Write, Gmail Read) are granted before allowing access.
+## Enable Otari
 
-2. **Google Ecosystem Integrations**
-   - **Sync Calendar**: Fetches upcoming Google Calendar events, adds them to the AI's Knowledge Base, runs the AI Refinement pipeline, and automatically pushes any dated tasks back to Google Calendar.
-   - **Sync Gmail**: Fetches the 20 most recent emails (including metadata and snippets), adds them to the AI's Knowledge Base, and extracts actionable items via the AI Refinement pipeline.
-   - **Update All**: A combined workflow that synchronizes both Calendar and Gmail simultaneously and refines existing tasks.
+1. Use a workspace with hackathon credits or an already authorized provider. The app needs a usable, enforced dollar ceiling. Read-only access to the models catalog does not establish that inference is funded.
+2. Keep a dedicated key in `OTARI_API_KEY`. Set `OTARI_BASE_URL` to the URL for your region. The default is `https://api.otari.ai/api/v1`.
+3. Set `OTARI_PLANNER_MODEL` and `OTARI_REVIEWER_MODEL` to distinct JSON-capable open-weight models or approved routing aliases. Choose a reviewer with tool support for the optional steps. Verify served models in the gateway trace.
+4. Set a dollar limit on the key or workspace covering all providers. The app checks the budget before generation and stops if the limit is absent or exhausted. Web research and code execution require their workspace tools to be enabled.
 
-3. **Interactive Task Board**
-   - Create, edit, complete, delete, and reorder tasks.
-   - Drag-and-drop powered by `@dnd-kit`.
-   - Workload summary, Top Priorities, and Upcoming sections.
+Chat can search all ready sources, one source, or run with retrieval off. It shows the exact retrieved excerpts associated with cited answers. **Find New Tasks** checks model suggestions against verbatim source evidence and adds only new titles. Planning Desk lets you load a saved source into the brief, inspect the text before sending it, then select which proposals to save.
 
-4. **Refine with AI**
-   - Regenerates the task board using the current tasks, recent conversation history, Google ecosystem data, and relevant document context.
-   - Returns a narrated first-person summary together with per-task AI reasoning.
+## Project history
 
-5. **AI Chat Assistant**
-   - Persistent conversation history.
-   - Context-aware responses using Retrieval-Augmented Generation (RAG).
-   - Can recommend regenerating the task board when appropriate.
+The `pre-otari` tag records the older TaskBase source recovered from a separate local copy. It used Gemini for text and embeddings and bundled Google imports with AI updates. The `otari-hackathon` branch adds the hosted Otari workflow, source-grounded retrieval, and explicit Google controls. The import commit records the recovered starting state. It does not recreate the previous repository's commit history.
 
-6. **Knowledge Base**
-   - Upload `.txt`, `.md`, and `.pdf` documents.
-   - Automatic document parsing, chunking, embedding generation, and indexing.
-   - Live processing status (`Processing`, `Ready`, `Failed`).
+## Record the submission
 
-7. **Semantic Search (RAG)**
-   - Retrieves the most relevant document chunks using vector similarity search before every AI interaction.
+Use the same repair café example from upload through planning. Show the search result and chat citation, load the source into Planning Desk, review the proposed deadline and capacity, save one task, and open it on the board. Expand **Otari run details** and match request IDs to the gateway's Requests view. For any tool, routing, or fallback you claim, show its actual gateway record.
 
-8. **Agent Experience**
-   - Live Agent Timeline showing each reasoning stage.
-   - First-person AI summaries.
-   - Per-task explanations (`ai_reason`) describing why every task exists.
+The [DoraHacks brief](https://dorahacks.io/hackathon/2468/detail) asks for a public repository, hackathon branch, first Otari commit link, a 3–5 minute participant-recorded demo, and feedback. The [judging rubric](https://docs.google.com/document/d/1-spnCZ3f2SSki8cb6FnochjchdyttUsjjxfoE6aBnF4/edit) gives credit for capabilities demonstrated in the working app.
 
----
+The demo design takes inspiration from [SalesShortcut](https://cloud.google.com/blog/products/ai-machine-learning/adk-hackathon-results-winners-and-highlights?hl=en), which connects multiple agent roles around one concrete workflow, and [Engagement Hub](https://devblogs.microsoft.com/powerplatform/agent-academy-hackathon-winners/), which combines structured evidence, human review, and duplicate-safe actions. [Metis](https://addons.mozilla.org/en-US/firefox/addon/metis/) informed the separate controls for Google reads and writes.
 
-## 4. Tech Stack
+## Checks
 
-1. **Frontend**
-   - React
-   - TanStack Router (SSR)
-   - TanStack Query
-   - Tailwind CSS
-   - shadcn/ui
-   - Lucide Icons
-   - Sonner
-   - `@dnd-kit/core`
-   - `@dnd-kit/sortable`
-   - `date-fns`
-
-2. **Backend**
-   - TanStack Start Server Functions (`createServerFn`)
-   - Google APIs (Calendar API , Gmail API , Gemini API)
-   - `unpdf` for PDF parsing
-   - Zod for AI response validation
-
-3. **Database**
-   - Supabase PostgreSQL
-   - `pgvector`
-
-4. **Authentication**
-   - Supabase Auth (Implicit flow)
-   - Google OAuth
-   - RLS-protected server functions
-
-5. **Artificial Intelligence**
-   - Gemini models for creating embeddings and refining tasks
-
-6. **Build**
-   - Vite
-
----
-
-## 5. System Architecture
-
-```text
-Browser (React + TanStack Router SSR)
-          │
-    Bearer Token & Google Provider Token
-          │
-          ▼
-TanStack Start Server Functions
-          │
-          ├── Authentication & Scope Middleware
-          ├── Task Services
-          ├── Google Sync Services (Calendar/Gmail)
-          ├── Document Services
-          ├── AI Services
-          └── Retrieval Services
-          │
-    ┌─────┴─────┬───────────┐
-    ▼           ▼           ▼
-Gemini API   Google APIs   Supabase Auth
- (LLM)    (Cal/Gmail)       │
-                            ▼
-               Supabase Postgres (pgvector)
-```
+Run `npx tsc --noEmit`, `npm run build`, and `node src/lib/__tests__/run-tests.js`. The public example is labeled as an example and uses no model calls. To demonstrate hosted inference, use a funded, capped Otari workspace and capture its real request IDs.

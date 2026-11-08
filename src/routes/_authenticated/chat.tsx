@@ -8,6 +8,8 @@ import { AgentTimeline, REFINE_STEPS } from "@/components/ai/agent-timeline";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { chat, clearChat, listChatMessages, refineTasksWithAI } from "@/lib/ai.functions";
+import { z } from "zod";
+import { listDocuments } from "@/lib/documents.functions";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -34,6 +36,14 @@ const SUGGESTIONS: string[] = [
   "Summarise tasks from the uploaded docs",
 ];
 const INITIAL_STAGE = "Ready";
+const sourceRefs = z.array(
+  z.object({
+    number: z.number(),
+    name: z.string(),
+    section: z.number(),
+    excerpt: z.string(),
+  }),
+);
 
 function ChatPage() {
   const navigate = useNavigate();
@@ -42,6 +52,11 @@ function ChatPage() {
   const send = useServerFn(chat);
   const wipe = useServerFn(clearChat);
   const refine = useServerFn(refineTasksWithAI);
+  const listDocs = useServerFn(listDocuments);
+  const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => listDocs() });
+  const [useSources, setUseSources] = useState(true);
+  const [sourceId, setSourceId] = useState("");
+  const [suggestTasks, setSuggestTasks] = useState(false);
 
   const messagesQuery = useQuery({ queryKey: ["chat"], queryFn: () => list() });
   const [input, setInput] = useState("");
@@ -63,52 +78,40 @@ function ChatPage() {
   }, [messages.length, stage, refining]);
 
   const sendMut = useMutation({
-    mutationFn: async (message: string) => {
-      setStage("Searching uploaded documents...");
-      const result = await send({ data: { message } });
-      setStage("Validating AI response...");
-      return result;
-    },
+    mutationFn: (message: string) =>
+      send({
+        data: {
+          message,
+          useSources,
+          sourceId:
+            useSources && documents.some((doc) => doc.id === sourceId) ? sourceId : undefined,
+        },
+      }),
     onSuccess: async (result) => {
+      setInput("");
+      setSuggestTasks(result.updateTasks);
       await queryClient.invalidateQueries({ queryKey: ["chat"] });
-
-      if (!result.updateTasks) {
-        setStage(INITIAL_STAGE);
-        return;
-      }
-
-      setRefining(true);
-      setStage("Updating tasks from chat and documents...");
-      toast.message("Updating tasks from chat and documents...", {
-        icon: <Sparkles className="h-4 w-4" />,
-      });
-
-      try {
-        const refined = await refine();
-        await queryClient.invalidateQueries({ queryKey: ["tasks"] });
-        await queryClient.invalidateQueries({ queryKey: ["task-summary"] });
-
-        const parts: string[] = [];
-        if (refined.changes.added) parts.push(`${refined.changes.added} added`);
-        if (refined.changes.removed) parts.push(`${refined.changes.removed} removed`);
-        parts.push(`${refined.count} total`);
-
-        toast.success(`Tasks updated: ${parts.join(", ")}`, {
-          description: refined.summary,
-          duration: 6000,
-        });
-      } catch (error) {
-        toast.error((error as Error).message);
-      } finally {
-        setRefining(false);
-        setStage(INITIAL_STAGE);
-      }
     },
-    onError: (error) => {
-      setStage(INITIAL_STAGE);
-      toast.error((error as Error).message);
-    },
+    onError: (error) => toast.error(error.message),
+    onSettled: () => setStage(INITIAL_STAGE),
   });
+
+  async function addSuggestedTasks() {
+    setRefining(true);
+    setStage("Finding tasks supported by sources and chat…");
+    try {
+      const result = await refine();
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: ["task-summary"] });
+      toast.success(result.summary);
+      setSuggestTasks(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add tasks.");
+    } finally {
+      setRefining(false);
+      setStage(INITIAL_STAGE);
+    }
+  }
 
   const clearMut = useMutation({
     mutationFn: () => wipe(),
@@ -123,8 +126,8 @@ function ChatPage() {
       return;
     }
 
-    setInput("");
-    setStage("Generating AI response...");
+    setInput(message);
+    setStage("Searching sources and drafting a reply…");
     sendMut.mutate(message);
   };
 
@@ -210,6 +213,7 @@ function ChatPage() {
                 </div>
               )}
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+              <SourceNotes value={message.source_refs} />
             </div>
           </div>
         ))}
@@ -227,6 +231,48 @@ function ChatPage() {
         )}
       </div>
 
+      {suggestTasks && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span>Find tasks supported by your sources and recent chat?</span>
+          <Button size="sm" onClick={addSuggestedTasks} disabled={busy}>
+            Add supported tasks
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSuggestTasks(false)} disabled={busy}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={useSources}
+            onChange={(event) => setUseSources(event.target.checked)}
+            disabled={busy}
+          />
+          Search knowledge base
+        </label>
+        {useSources && (
+          <label>
+            Source
+            <select
+              value={sourceId}
+              onChange={(event) => setSourceId(event.target.value)}
+              disabled={busy}
+              className="ml-2 max-w-[13rem] rounded border bg-background p-1"
+            >
+              <option value="">All ready sources</option>
+              {documents
+                .filter((doc) => doc.status === "ready")
+                .map((doc) => (
+                  <option key={doc.id} value={doc.id}>
+                    {doc.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+      </div>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -243,15 +289,43 @@ function ChatPage() {
               submit();
             }
           }}
-          placeholder="Ask anything..."
+          placeholder="Ask about your work or sources..."
+          aria-label="Chat message"
+          maxLength={2500}
+          disabled={busy}
           rows={2}
           className="resize-none"
         />
-        <Button type="submit" disabled={busy || !input.trim()} className="w-full sm:w-auto">
+        <Button
+          type="submit"
+          aria-label="Send"
+          disabled={busy || !input.trim()}
+          className="w-full sm:w-auto"
+        >
           <Send className="mr-2 h-4 w-4 sm:mr-0" />
           <span className="sm:hidden">Send</span>
         </Button>
       </form>
     </main>
+  );
+}
+
+function SourceNotes({ value }: { value: unknown }) {
+  const parsed = sourceRefs.safeParse(value);
+  if (!parsed.success || !parsed.data.length) return null;
+  return (
+    <details className="mt-2 border-t pt-2 text-xs">
+      <summary className="cursor-pointer font-medium">Sources cited ({parsed.data.length})</summary>
+      {parsed.data.map((source) => (
+        <div key={source.number} className="mt-3">
+          <strong>
+            [{source.number}] {source.name} · section {source.section}
+          </strong>
+          <blockquote className="my-1 max-h-40 overflow-auto whitespace-pre-wrap">
+            {source.excerpt}
+          </blockquote>
+        </div>
+      ))}
+    </details>
   );
 }

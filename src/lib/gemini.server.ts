@@ -1,6 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 
-const TEXT_MODEL = "gemini-3.1-flash-lite";
 const EMBEDDING_MODEL = "gemini-embedding-001";
 const EMBEDDING_DIMENSIONS = 1536;
 
@@ -10,22 +9,6 @@ function getAiClient() {
     throw new Error("GEMINI_API_KEY missing");
   }
   return new GoogleGenAI({ apiKey: key });
-}
-
-export async function generateGeminiText(prompt: string): Promise<string> {
-  if (prompt.trim() == "") return "";
-  const ai = getAiClient();
-  const response = await ai.models.generateContent({
-    model: TEXT_MODEL,
-    contents: prompt,
-  });
-
-  const text = response.text;
-  if (!text) {
-    throw new Error("Gemini returned no text.");
-  }
-
-  return text.trim();
 }
 
 async function embedText(input: string): Promise<number[]> {
