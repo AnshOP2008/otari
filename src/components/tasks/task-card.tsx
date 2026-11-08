@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Pencil, Trash2, Calendar, Sparkles, ChevronDown, X } from "lucide-react";
+import { GripVertical, Pencil, Trash2, Calendar, Clock, Sparkles, ChevronDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ export type Task = {
   status: "todo" | "done";
   position: number;
   due_date: string | null;
+  estimate_minutes: number | null;
   created_by: "user" | "ai";
   ai_reason: string | null;
   created_at?: string;
@@ -158,6 +160,11 @@ export function TaskCard({
                 <Calendar className="h-3 w-3" /> {format(parseISO(task.due_date), "MMM d")}
               </span>
             )}
+            {task.estimate_minutes && (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <Clock className="h-3 w-3" /> {task.estimate_minutes} min estimated
+              </span>
+            )}
             {task.tags.map((t) => (
               <span
                 key={t}
@@ -167,12 +174,23 @@ export function TaskCard({
               </span>
             ))}
           </div>
+          {task.status === "todo" && !pastMode && (
+            <Link
+              to="/permissions"
+              search={{ focusTask: task.id }}
+              hash="calendar-export"
+              className="mt-2 mr-3 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <Calendar className="h-3 w-3" /> Schedule focus time
+            </Link>
+          )}
           {task.ai_reason && (
             <button
               onClick={() => setShowReason((v) => !v)}
               className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
             >
-              <Sparkles className="h-3 w-3" /> AI reasoning
+              <Sparkles className="h-3 w-3" />{" "}
+              {task.ai_reason.startsWith("Source excerpt: ") ? "Source evidence" : "AI reasoning"}
               <ChevronDown className={cn("h-3 w-3 transition", showReason && "rotate-180")} />
             </button>
           )}
@@ -193,7 +211,12 @@ export function TaskCard({
           )}
         </div>
         <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" onClick={() => onEdit(task)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Edit ${task.title}`}
+            onClick={() => onEdit(task)}
+          >
             <Pencil className="h-3.5 w-3.5" />
           </Button>
           <Button variant="ghost" size="icon" onClick={() => onDelete(task)}>

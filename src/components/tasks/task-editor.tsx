@@ -26,6 +26,7 @@ export type TaskDraft = {
   priority: "high" | "medium" | "low";
   tags: string[];
   due_date: string | null;
+  estimate_minutes: number | null;
 };
 
 export function TaskEditor({
@@ -45,6 +46,7 @@ export function TaskEditor({
     priority: "medium",
     tags: [],
     due_date: null,
+    estimate_minutes: null,
   });
   const [tagsInput, setTagsInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -60,6 +62,7 @@ export function TaskEditor({
               priority: initial.priority,
               tags: initial.tags,
               due_date: initial.due_date,
+              estimate_minutes: initial.estimate_minutes,
             }
           : {
               title: "",
@@ -67,6 +70,7 @@ export function TaskEditor({
               priority: "medium",
               tags: [],
               due_date: null,
+              estimate_minutes: null,
             },
       );
       setTagsInput(initial?.tags.join(", ") ?? "");
@@ -146,6 +150,21 @@ export function TaskEditor({
                 onChange={(event) => setDraft({ ...draft, due_date: event.target.value || null })}
               />
             </div>
+          </div>
+          <div>
+            <Label htmlFor="task-estimate">Estimated minutes (optional)</Label>
+            <Input
+              id="task-estimate"
+              type="number"
+              min={1}
+              max={2400}
+              step={1}
+              value={draft.estimate_minutes ?? ""}
+              onChange={(event) => {
+                const minutes = event.target.valueAsNumber;
+                setDraft({ ...draft, estimate_minutes: Number.isNaN(minutes) ? null : minutes });
+              }}
+            />
           </div>
           <div>
             <Label htmlFor="task-tags">Tags (comma-separated)</Label>

@@ -17,10 +17,12 @@ function OAuthCallback() {
     if (!hasBrowserSupabaseConfig) return;
     let active = true;
     const pending = sessionStorage.getItem("taskbase-google-connect");
+    const focusTask = sessionStorage.getItem("taskbase-google-focus-task");
 
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
       sessionStorage.removeItem("taskbase-google-connect");
+      sessionStorage.removeItem("taskbase-google-focus-task");
       const params = new URLSearchParams(location.hash.slice(1) || location.search);
       if (error || params.has("error") || !data.session) {
         setMessage(
@@ -33,7 +35,16 @@ function OAuthCallback() {
         setMessage("Use the same Google account that owns this TaskBase workspace.");
         return;
       }
-      void navigate({ to: pending ? "/permissions" : "/home", replace: true });
+      if (pending) {
+        void navigate({
+          to: "/permissions",
+          search: { focusTask: focusTask ?? undefined },
+          hash: focusTask ? "calendar-export" : undefined,
+          replace: true,
+        });
+      } else {
+        void navigate({ to: "/home", replace: true });
+      }
     });
     return () => {
       active = false;

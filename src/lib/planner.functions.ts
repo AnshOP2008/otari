@@ -194,6 +194,7 @@ export const savePlan = createServerFn({ method: "POST" })
       description: task.description,
       priority: task.priority,
       due_date: task.dueDate,
+      estimate_minutes: task.minutes,
       ai_reason: "Source excerpt: " + task.evidence,
       position: start + index,
       created_by: "ai" as const,

@@ -194,7 +194,7 @@ function HomePage() {
   });
 
   const updateMut = useMutation({
-    mutationFn: (draft: TaskDraft & { id: string; status?: Task["status"] }) =>
+    mutationFn: (draft: Partial<TaskDraft> & { id: string; status?: Task["status"] }) =>
       update({ data: draft }),
     onSuccess: () => {
       invalidateTasks();
@@ -283,11 +283,6 @@ function HomePage() {
   const toggleTask = (task: Task) => {
     updateMut.mutate({
       id: task.id,
-      title: task.title,
-      description: task.description,
-      priority: task.priority,
-      tags: task.tags,
-      due_date: task.due_date,
       status: task.status === "done" ? "todo" : "done",
     });
   };

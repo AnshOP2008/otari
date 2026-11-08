@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const PriorityEnum = z.enum(["high", "medium", "low"]);
 const StatusEnum = z.enum(["todo", "done"]);
+const Estimate = z.number().int().min(1).max(2400).nullable().optional();
 
 export const listTasks = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -23,6 +24,7 @@ const CreateTaskInput = z.object({
   priority: PriorityEnum.default("medium"),
   tags: z.array(z.string()).default([]),
   due_date: z.string().nullable().optional(),
+  estimate_minutes: Estimate,
 });
 
 export const createTask = createServerFn({ method: "POST" })
@@ -46,6 +48,7 @@ export const createTask = createServerFn({ method: "POST" })
         priority: data.priority,
         tags: data.tags,
         due_date: data.due_date ?? null,
+        estimate_minutes: data.estimate_minutes ?? null,
         position: nextPos,
         created_by: "user",
       })
@@ -63,6 +66,7 @@ const UpdateTaskInput = z.object({
   tags: z.array(z.string()).optional(),
   status: StatusEnum.optional(),
   due_date: z.string().nullable().optional(),
+  estimate_minutes: Estimate,
 });
 
 export const updateTask = createServerFn({ method: "POST" })

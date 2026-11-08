@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Calendar, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { listDocuments } from "@/lib/documents.functions";
@@ -22,6 +23,7 @@ import {
 
 export const Route = createFileRoute("/_authenticated/permissions")({
   head: () => ({ meta: [{ title: "Google integrations - TaskBase" }] }),
+  validateSearch: z.object({ focusTask: z.string().uuid().optional().catch(undefined) }),
   component: Integrations,
 });
 
@@ -34,6 +36,7 @@ const scopes = {
 
 function Integrations() {
   const { user } = Route.useRouteContext();
+  const { focusTask } = Route.useSearch();
   const qc = useQueryClient();
   const loadDocs = useServerFn(listDocuments);
   const loadTasks = useServerFn(listTasks);
@@ -47,14 +50,16 @@ function Integrations() {
   const loadCalendars = useServerFn(listGoogleCalendars);
   const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => loadDocs() });
   const { data: tasks = [] } = useQuery({ queryKey: ["tasks"], queryFn: () => loadTasks() });
-  const [taskId, setTaskId] = useState("");
-  const [timed, setTimed] = useState(false);
+  const [taskId, setTaskId] = useState(focusTask ?? "");
+  const [timed, setTimed] = useState(Boolean(focusTask));
   const [blockStart, setBlockStart] = useState("");
-  const [blockMinutes, setBlockMinutes] = useState(45);
+  const [blockDurationOverride, setBlockDurationOverride] = useState<number | null>(null);
   const [includeDescription, setIncludeDescription] = useState(false);
   const [calendarFile, setCalendarFile] = useState<{ key: string; url: string } | null>(null);
   const eligible = tasks.filter((task) => task.status !== "done" && (timed || task.due_date));
   const selectedTask = eligible.find((task) => task.id === taskId);
+  const estimate = selectedTask?.estimate_minutes;
+  const blockMinutes = blockDurationOverride ?? (estimate && estimate <= 1440 ? estimate : 45);
   const start = new Date(blockStart);
   const slot =
     timed &&
@@ -84,6 +89,11 @@ function Integrations() {
   const connect = useMutation({
     mutationFn: async (scope: keyof typeof scopes | "all") => {
       sessionStorage.setItem("taskbase-google-connect", user.id);
+      if (timed && selectedTask && (scope === "export" || scope === "availability")) {
+        sessionStorage.setItem("taskbase-google-focus-task", selectedTask.id);
+      } else {
+        sessionStorage.removeItem("taskbase-google-focus-task");
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -94,6 +104,7 @@ function Integrations() {
       });
       if (error) {
         sessionStorage.removeItem("taskbase-google-connect");
+        sessionStorage.removeItem("taskbase-google-focus-task");
         throw error;
       }
     },
@@ -438,7 +449,7 @@ function Integrations() {
         </section>
       )}
 
-      <section className="card-soft mt-6 space-y-4 p-5">
+      <section id="calendar-export" className="card-soft mt-6 space-y-4 p-5">
         <h2 className="text-2xl">Send one task to Calendar</h2>
         <p className="text-sm text-muted-foreground">
           Choose an all-day due date or schedule time to work. Sending the same task again updates
@@ -463,7 +474,10 @@ function Integrations() {
           Task
           <select
             value={selectedTask?.id ?? ""}
-            onChange={(event) => setTaskId(event.target.value)}
+            onChange={(event) => {
+              setTaskId(event.target.value);
+              setBlockDurationOverride(null);
+            }}
             disabled={busy}
             className="ml-2 max-w-full rounded border bg-background p-1"
           >
@@ -491,22 +505,31 @@ function Integrations() {
                 className="mt-1 block w-full rounded border bg-background p-2"
               />
             </label>
-            <label className="text-sm">
-              Duration in minutes
+            <div className="text-sm">
+              <label htmlFor="focus-block-duration">Duration in minutes</label>
               <input
+                id="focus-block-duration"
+                aria-describedby={estimate != null ? "focus-block-estimate" : undefined}
                 type="number"
                 min={1}
                 max={1440}
                 step={1}
                 value={Number.isNaN(blockMinutes) ? "" : blockMinutes}
                 onChange={(event) => {
-                  setBlockMinutes(event.target.valueAsNumber);
+                  setBlockDurationOverride(event.target.valueAsNumber);
                   availability.reset();
                 }}
                 disabled={busy}
                 className="mt-1 block w-full rounded border bg-background p-2"
               />
-            </label>
+              {estimate != null && (
+                <span id="focus-block-estimate" className="mt-1 block text-xs text-muted-foreground">
+                  {estimate > 1440
+                    ? `Estimated at ${estimate} minutes. Schedule one portion at a time.`
+                    : `Task estimate is ${estimate} minutes. You can set a different duration.`}
+                </span>
+              )}
+            </div>
           </div>
         )}
         <label className="flex items-center gap-2 text-sm">
