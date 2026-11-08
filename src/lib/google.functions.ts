@@ -54,6 +54,80 @@ function googleFailure(response: Response, service: string) {
   );
 }
 
+export const checkCalendarCapacity = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(
+    z.object({
+      accessToken: z.string().min(1).max(4096),
+      start: z.string().datetime({ offset: true }),
+      end: z.string().datetime({ offset: true }),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const start = Date.parse(data.start);
+    const end = Date.parse(data.end);
+    if (!Number.isFinite(end - start) || end - start < 60_000 || end - start > 80 * 3_600_000) {
+      throw new Error("Choose a window from 1 minute to 80 hours.");
+    }
+    const response = await googleFetch(
+      "https://www.googleapis.com/calendar/v3/freeBusy",
+      data.accessToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          timeMin: data.start,
+          timeMax: data.end,
+          items: [{ id: "primary" }],
+        }),
+      },
+    );
+    if (!response.ok) throw googleFailure(response, "Google Calendar");
+    const parsed = z
+      .object({
+        calendars: z.record(
+          z.object({
+            errors: z.array(z.unknown()).optional(),
+            busy: z
+              .array(
+                z.object({
+                  start: z.string().datetime({ offset: true }),
+                  end: z.string().datetime({ offset: true }),
+                }),
+              )
+              .optional(),
+          }),
+        ),
+      })
+      .safeParse(await response.json());
+    // Google may resolve the primary alias to the account's calendar ID.
+    const calendars = parsed.success ? Object.values(parsed.data.calendars) : [];
+    const calendar = calendars[0];
+    if (calendars.length !== 1 || !calendar?.busy || calendar.errors?.length) {
+      throw new Error("Google did not return availability for the primary calendar.");
+    }
+    const busy = calendar.busy
+      .map((block) => ({
+        start: Math.max(start, Date.parse(block.start)),
+        end: Math.min(end, Date.parse(block.end)),
+      }))
+      .filter((block) => block.end > block.start)
+      .sort((a, b) => a.start - b.start);
+
+    const free: number[] = [];
+    let cursor = start;
+    for (const block of busy) {
+      if (block.start > cursor) free.push(Math.floor((block.start - cursor) / 60_000));
+      cursor = Math.max(cursor, block.end);
+    }
+    if (cursor < end) free.push(Math.floor((end - cursor) / 60_000));
+    return {
+      availableMinutes: free.reduce((sum, minutes) => sum + minutes, 0),
+      longestBlockMinutes: Math.max(0, ...free),
+      freeBlocks: free.filter((minutes) => minutes > 0).length,
+    };
+  });
+
 async function storeSnapshot(
   db: Db,
   filename: string,

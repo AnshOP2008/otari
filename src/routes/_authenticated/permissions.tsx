@@ -26,6 +26,7 @@ export const Route = createFileRoute("/_authenticated/permissions")({
 
 const scopes = {
   calendar: "https://www.googleapis.com/auth/calendar.readonly",
+  availability: "https://www.googleapis.com/auth/calendar.freebusy",
   gmail: "https://www.googleapis.com/auth/gmail.readonly",
   export: "https://www.googleapis.com/auth/calendar.events",
 };
@@ -224,6 +225,13 @@ function Integrations() {
               onClick={() => connect.mutate("calendar")}
             >
               Allow Calendar read
+            </Button>
+            <Button
+              variant="outline"
+              disabled={busy || !googleAvailable}
+              onClick={() => connect.mutate("availability")}
+            >
+              Allow free/busy access
             </Button>
             <Button disabled={busy || !googleAvailable} onClick={() => preview.mutate("calendar")}>
               {preview.isPending && preview.variables === "calendar"

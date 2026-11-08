@@ -12,6 +12,8 @@ Open **Chat** and choose all sources or one source. Clear **Search knowledge bas
 
 Open **Planning Desk** and paste a handoff or load a saved source into the brief. Check what will be sent to Otari and enter your available hours. The planner drafts tasks and a second model reviews them. Choose which tasks to add to your board. **Otari run details** shows the models and request IDs for live runs.
 
+With Google connected, use **Use Calendar availability** to check a work window on your primary calendar. Apply the available minutes and longest free block to flag tasks that may need to be split. The calendar check uses free/busy access and does not import event details.
+
 You can also select **Find New Tasks** on the board to append supported tasks from your sources and recent chat. Existing board items remain available.
 
 ## Connect Google

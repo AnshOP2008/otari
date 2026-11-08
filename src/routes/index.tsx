@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { draftPlan, savePlan } from "@/lib/planner.functions";
 import { listDocuments, loadSourceBrief } from "@/lib/documents.functions";
+import { checkCalendarCapacity } from "@/lib/google.functions";
+import { useGoogleOAuth } from "@/hooks/use-google-oauth";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "TaskBase | Brief to board" }] }),
@@ -89,6 +91,16 @@ function PlanningDesk() {
   const [loadingSource, setLoadingSource] = useState(false);
   const [brief, setBrief] = useState(sampleBrief);
   const [hours, setHours] = useState(2);
+  const { googleAvailable } = useGoogleOAuth();
+  const checkCalendar = useServerFn(checkCalendarCapacity);
+  const [windowStart, setWindowStart] = useState("");
+  const [windowEnd, setWindowEnd] = useState("");
+  const [calendarResult, setCalendarResult] = useState<Awaited<
+    ReturnType<typeof checkCalendarCapacity>
+  > | null>(null);
+  const [useCalendar, setUseCalendar] = useState(false);
+  const [checkingCalendar, setCheckingCalendar] = useState(false);
+  const [calendarError, setCalendarError] = useState("");
   const [capacityCheck, setCapacityCheck] = useState(false);
   const [researchTopic, setResearchTopic] = useState("");
   const [result, setResult] = useState<Draft | null>(sample);
@@ -115,6 +127,7 @@ function PlanningDesk() {
   function resetSample() {
     setBrief(sampleBrief);
     setHours(2);
+    setUseCalendar(false);
     setAvailableMinutes(120);
     setResearchTopic("");
     setCapacityCheck(false);
@@ -142,21 +155,73 @@ function PlanningDesk() {
 
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending || !signedIn) return;
+    if (pending || checkingCalendar || !signedIn) return;
+    const calendarCapacity =
+      useCalendar && calendarResult
+        ? {
+            availableMinutes: calendarResult.availableMinutes,
+            longestBlockMinutes: calendarResult.longestBlockMinutes,
+          }
+        : undefined;
     setPending("draft");
     setError("");
     setResult(null);
     setSaved(false);
     try {
-      const plan = await draft({ data: { brief, hours, capacityCheck, researchTopic } });
+      const plan = await draft({
+        data: {
+          brief,
+          ...(calendarCapacity ? { calendarCapacity } : { hours }),
+          capacityCheck,
+          researchTopic,
+        },
+      });
       setResult(plan);
-      setAvailableMinutes(hours * 60);
+      setAvailableMinutes(calendarCapacity?.availableMinutes ?? hours * 60);
       setExample(false);
       setSelected(new Set(plan.tasks.filter((task) => !task.hold).map((task) => task.id)));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not draft a plan.");
     } finally {
       setPending(null);
+    }
+  }
+
+  function clearCalendarResult() {
+    setCalendarResult(null);
+    setUseCalendar(false);
+    setCalendarError("");
+  }
+
+  async function loadCalendarCapacity() {
+    clearCalendarResult();
+    const start = new Date(windowStart);
+    const end = new Date(windowEnd);
+    if (
+      !Number.isFinite(start.getTime()) ||
+      !Number.isFinite(end.getTime()) ||
+      end.getTime() - start.getTime() < 60_000 ||
+      end.getTime() - start.getTime() > 80 * 3_600_000
+    ) {
+      setCalendarError("Choose a start and end from 1 minute to 80 hours apart.");
+      return;
+    }
+    setCheckingCalendar(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.provider_token;
+      if (!accessToken) throw new Error("Allow Calendar availability in Integrations first.");
+      setCalendarResult(
+        await checkCalendar({
+          data: { accessToken, start: start.toISOString(), end: end.toISOString() },
+        }),
+      );
+    } catch (cause) {
+      setCalendarError(
+        cause instanceof Error ? cause.message : "Could not check Calendar availability.",
+      );
+    } finally {
+      setCheckingCalendar(false);
     }
   }
 
@@ -278,11 +343,98 @@ function PlanningDesk() {
                   min={1}
                   max={80}
                   required
+                  disabled={useCalendar}
                   value={Number.isNaN(hours) ? "" : hours}
                   onChange={(event) => setHours(event.target.valueAsNumber)}
                   className="w-24 rounded-lg border border-[#cbd6c7] bg-white px-3 py-2 text-sm"
                 />
               </div>
+              {signedIn && (
+                <details className="rounded-xl border border-[#d6ddd0] p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">
+                    Use Calendar availability
+                  </summary>
+                  <p className="mt-2 text-xs text-[#4f6357]">
+                    Choose a work window in your local time. Otari receives the available minutes
+                    and longest free block.
+                  </p>
+                  {googleAvailable ? (
+                    <>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <label>
+                          Window starts
+                          <input
+                            type="datetime-local"
+                            value={windowStart}
+                            disabled={checkingCalendar}
+                            onChange={(event) => {
+                              setWindowStart(event.target.value);
+                              clearCalendarResult();
+                            }}
+                            className="block w-full rounded-lg border border-[#cbd6c7] bg-white p-2"
+                          />
+                        </label>
+                        <label>
+                          Window ends
+                          <input
+                            type="datetime-local"
+                            value={windowEnd}
+                            disabled={checkingCalendar}
+                            onChange={(event) => {
+                              setWindowEnd(event.target.value);
+                              clearCalendarResult();
+                            }}
+                            className="block w-full rounded-lg border border-[#cbd6c7] bg-white p-2"
+                          />
+                        </label>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        disabled={checkingCalendar || !windowStart || !windowEnd}
+                        onClick={loadCalendarCapacity}
+                      >
+                        {checkingCalendar ? "Checking…" : "Check primary Calendar"}
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-xs text-[#4f6357]">
+                      Google OAuth is unavailable in this workspace.
+                    </p>
+                  )}
+                  <p className="mt-2 text-xs">
+                    <Link to="/permissions" className="underline">
+                      Manage Calendar permissions
+                    </Link>
+                  </p>
+                  {calendarError && (
+                    <p role="alert" className="mt-2 text-sm text-red-800">
+                      {calendarError}
+                    </p>
+                  )}
+                  {calendarResult && (
+                    <div className="mt-3 rounded-lg bg-white/70 p-2">
+                      <p role="status">
+                        {calendarResult.availableMinutes} min free across{" "}
+                        {calendarResult.freeBlocks} blocks. Longest block:{" "}
+                        {calendarResult.longestBlockMinutes} min.
+                      </p>
+                      {calendarResult.availableMinutes > 0 && (
+                        <label className="mt-2 flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={useCalendar}
+                            onChange={(event) => setUseCalendar(event.target.checked)}
+                          />
+                          Use this capacity for the draft
+                        </label>
+                      )}
+                    </div>
+                  )}
+                </details>
+              )}
               <details className="rounded-xl border border-[#d6ddd0] p-3 text-sm">
                 <summary className="cursor-pointer font-medium">Optional Otari tools</summary>
                 <label className="mt-3 flex items-center gap-2">
@@ -309,7 +461,11 @@ function PlanningDesk() {
                 </p>
               </details>
               {signedIn ? (
-                <Button type="submit" className="w-full bg-[#224938] text-white hover:bg-[#173a2c]">
+                <Button
+                  type="submit"
+                  disabled={checkingCalendar}
+                  className="w-full bg-[#224938] text-white hover:bg-[#173a2c]"
+                >
                   <Sparkles size={16} />{" "}
                   {pending === "draft" ? "Drafting and reviewing…" : "Draft with Otari"}
                 </Button>
