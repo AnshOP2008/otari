@@ -1,6 +1,12 @@
 const CHUNK_SIZE = 4000;
 const CHUNK_OVERLAP = 150;
 
+export function sourceLabel(name: string) {
+  if (name === "gmail!@#.txt") return "Gmail inbox";
+  if (name === "calendar!@#.txt") return "Google Calendar";
+  return name;
+}
+
 export function normalizeText(text: string) {
   return text
     .replace(/\r\n/g, "\n")

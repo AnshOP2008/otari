@@ -112,7 +112,7 @@ export const loadSourceBrief = createServerFn({ method: "GET" })
       .select("content")
       .eq("document_id", doc.id)
       .order("chunk_index")
-      .limit(4);
+      .limit(doc.name === "gmail!@#.txt" || doc.name === "calendar!@#.txt" ? 50 : 4);
     if (chunkError || !chunks.length) throw new Error("Could not open text from that source.");
     return {
       name: doc.name,

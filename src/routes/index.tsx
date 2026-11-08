@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   Braces,
@@ -15,7 +15,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import { draftPlan, savePlan } from "@/lib/planner.functions";
-import { listDocuments, loadSourceBrief } from "@/lib/documents.functions";
+import { listDocuments, loadSourceBrief, searchKnowledge } from "@/lib/documents.functions";
+import { sourceLabel } from "@/lib/document-text";
 import { checkCalendarCapacity } from "@/lib/google.functions";
 import { useGoogleOAuth } from "@/hooks/use-google-oauth";
 
@@ -81,6 +82,7 @@ function PlanningDesk() {
   const [signedIn, setSignedIn] = useState(false);
   const listDocs = useServerFn(listDocuments);
   const openSource = useServerFn(loadSourceBrief);
+  const searchSources = useServerFn(searchKnowledge);
   const { data: documents = [] } = useQuery({
     queryKey: ["documents"],
     queryFn: () => listDocs(),
@@ -89,6 +91,11 @@ function PlanningDesk() {
   const readySources = documents.filter((document) => document.status === "ready");
   const [sourceId, setSourceId] = useState("");
   const [loadingSource, setLoadingSource] = useState(false);
+  const [sourceQuery, setSourceQuery] = useState("");
+  const passages = useMutation({
+    mutationFn: () =>
+      searchSources({ data: { query: sourceQuery, sourceId: sourceId || undefined } }),
+  });
   const [brief, setBrief] = useState(sampleBrief);
   const [hours, setHours] = useState(2);
   const { googleAvailable } = useGoogleOAuth();
@@ -143,14 +150,19 @@ function PlanningDesk() {
     setError("");
     try {
       const source = await openSource({ data: { id: sourceId } });
-      setBrief(source.text);
-      setResult(null);
-      setSaved(false);
+      replaceBrief(source.text);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load that source.");
     } finally {
       setLoadingSource(false);
     }
+  }
+
+  function replaceBrief(text: string) {
+    setBrief(text);
+    setResult(null);
+    setSaved(false);
+    setError("");
   }
 
   async function generate(event: FormEvent<HTMLFormElement>) {
@@ -290,31 +302,97 @@ function PlanningDesk() {
                 </Button>
               </div>
               {signedIn && readySources.length > 0 && (
-                <div className="flex flex-wrap items-end gap-2">
-                  <label className="min-w-36 flex-1 text-xs">
-                    Saved source
-                    <select
-                      value={sourceId}
-                      onChange={(event) => setSourceId(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-[#cbd6c7] bg-white p-2 text-sm"
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="min-w-36 flex-1 text-xs">
+                      Saved source
+                      <select
+                        value={sourceId}
+                        onChange={(event) => {
+                          setSourceId(event.target.value);
+                          passages.reset();
+                        }}
+                        disabled={passages.isPending}
+                        className="mt-1 w-full rounded-lg border border-[#cbd6c7] bg-white p-2 text-sm"
+                      >
+                        <option value="">All saved sources</option>
+                        {readySources.map((source) => (
+                          <option key={source.id} value={source.id}>
+                            {sourceLabel(source.name)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!sourceId}
+                      onClick={openSelectedSource}
                     >
-                      <option value="">Choose a document or Google import</option>
-                      {readySources.map((source) => (
-                        <option key={source.id} value={source.id}>
-                          {source.name}
-                        </option>
+                      {loadingSource ? "Loading…" : "Load source"}
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="min-w-36 flex-1 text-xs">
+                      Find a passage
+                      <input
+                        value={sourceQuery}
+                        onChange={(event) => setSourceQuery(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+                          event.preventDefault();
+                          if (sourceQuery.trim().length >= 2 && !passages.isPending)
+                            passages.mutate();
+                        }}
+                        maxLength={300}
+                        placeholder="Try a deadline or project name"
+                        className="mt-1 w-full rounded-lg border border-[#cbd6c7] bg-white p-2 text-sm"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={sourceQuery.trim().length < 2 || passages.isPending}
+                      onClick={() => passages.mutate()}
+                    >
+                      {passages.isPending ? "Searching…" : "Search sources"}
+                    </Button>
+                  </div>
+                  {passages.error && (
+                    <p role="alert" className="text-sm text-destructive">
+                      {passages.error.message}
+                    </p>
+                  )}
+                  {passages.data && (
+                    <div className="max-h-72 space-y-2 overflow-y-auto">
+                      <p role="status" className="text-xs">
+                        {passages.data.length
+                          ? `${passages.data.length} matching passage${passages.data.length === 1 ? "" : "s"}`
+                          : "No matching passages."}
+                      </p>
+                      {passages.data.map((source) => (
+                        <details
+                          key={source.id + ":" + source.section}
+                          className="rounded-lg border p-2 text-sm"
+                        >
+                          <summary className="cursor-pointer">
+                            {sourceLabel(source.name)} · section {source.section}
+                          </summary>
+                          <p className="my-2 whitespace-pre-wrap">{source.excerpt}</p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => replaceBrief(source.excerpt)}
+                          >
+                            Replace brief with passage
+                          </Button>
+                        </details>
                       ))}
-                    </select>
-                  </label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!sourceId}
-                    onClick={openSelectedSource}
-                  >
-                    {loadingSource ? "Loading…" : "Load into brief"}
-                  </Button>
+                    </div>
+                  )}
                 </div>
               )}
               <div>

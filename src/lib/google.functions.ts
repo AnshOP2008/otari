@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
-import { chunkText } from "./document-text";
+import { normalizeText } from "./document-text";
 
 const calendarFile = "calendar!@#.txt";
 const gmailFile = "gmail!@#.txt";
@@ -168,14 +168,12 @@ async function storeSnapshot(
       "Google results changed since your preview. Refresh the preview before importing.",
     );
   }
-  const content = [
-    label,
-    "Imported at " + new Date().toISOString(),
-    ...included.map((entry) => entry.text),
-  ].join("\n\n");
+  const stamp = label + "\nImported at " + new Date().toISOString();
+  // Keep each event or conversation together so search can cite it independently.
+  const chunks = included.map((entry) => normalizeText(entry.text + "\n\n" + stamp));
   const { error } = await db.rpc("store_document", {
     document_name: filename,
-    chunks: chunkText(content),
+    chunks: chunks.length ? chunks : [stamp],
     replace_existing: true,
   });
   if (error)
