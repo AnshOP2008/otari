@@ -55,6 +55,8 @@ In **Planning Desk**, open **Use Calendar availability** to check a work window 
 3. Set `OTARI_PLANNER_MODEL` and `OTARI_REVIEWER_MODEL` to distinct JSON-capable open-weight models or approved routing aliases. Choose a reviewer with tool support for the optional steps. Verify served models in the gateway trace.
 4. Set a dollar limit on the key or workspace covering all providers. The app checks the budget before generation and stops if the limit is absent or exhausted. Web research and code execution require their workspace tools to be enabled.
 
+Run `node --env-file=.env scripts/check-otari.mjs` before recording. It checks the enforced limit and the configured model IDs against the live catalog without calling a model. If you use a custom routing alias that the catalog does not list, verify it in the dashboard. A spending cap and a catalog entry still require wallet credits or a working provider connection.
+
 Chat can search all ready sources, one source, or run with retrieval off. It shows the retrieved excerpts associated with cited answers. **Find New Tasks** checks model suggestions against verbatim source evidence and adds only new titles. In Planning Desk, use **Search sources** to find a passage across your notes, inbox snapshot, and Calendar snapshot, then preview it before replacing the brief. You can also load the beginning of a saved source. New Google imports keep each message, conversation, or event in its own searchable passage.
 
 ## Project history
