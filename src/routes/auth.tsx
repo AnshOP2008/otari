@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,13 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in - TaskBase" }] }),
-  component: AuthPage,
+  component: AuthRoute,
 });
+
+function AuthRoute() {
+  const matchRoute = useMatchRoute();
+  return matchRoute({ to: "/auth/callback" }) ? <Outlet /> : <AuthPage />;
+}
 
 function AuthPage() {
   const navigate = useNavigate();
