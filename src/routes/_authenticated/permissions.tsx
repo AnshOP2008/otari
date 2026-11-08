@@ -11,7 +11,7 @@ import { listDocuments } from "@/lib/documents.functions";
 import { listTasks } from "@/lib/tasks.functions";
 import { useGoogleOAuth } from "@/hooks/use-google-oauth";
 import {
-  checkCalendarCapacity,
+  checkCalendarFocusSlot,
   downloadCalendarTask,
   exportCalendarTask,
   listGoogleCalendars,
@@ -45,7 +45,7 @@ function Integrations() {
   const loadPreview = useServerFn(previewGoogleImport);
   const remove = useServerFn(removeIntegrationDoc);
   const exportTask = useServerFn(exportCalendarTask);
-  const checkAvailability = useServerFn(checkCalendarCapacity);
+  const checkAvailability = useServerFn(checkCalendarFocusSlot);
   const downloadTask = useServerFn(downloadCalendarTask);
   const loadCalendars = useServerFn(listGoogleCalendars);
   const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => loadDocs() });
@@ -162,13 +162,33 @@ function Integrations() {
   });
 
   const availability = useMutation({
-    mutationFn: async (window: NonNullable<typeof slot>) =>
-      checkAvailability({ data: { ...window, accessToken: await getToken() } }),
+    mutationFn: async (window: NonNullable<typeof slot>) => {
+      const endOfDay = new Date(window.start);
+      endOfDay.setHours(24, 0, 0, 0);
+      return checkAvailability({
+        data: { ...window, searchEnd: endOfDay.toISOString(), accessToken: await getToken() },
+      });
+    },
     onError: (error) => toast.error(error.message),
   });
   const checkedWindow = availability.variables;
   const checkedSlotKey = checkedWindow ? checkedWindow.start + "/" + checkedWindow.end : null;
-  const slotAvailability = slotKey === checkedSlotKey ? availability.data : undefined;
+  const alternative = availability.data?.alternative;
+  const alternativeKey = alternative ? alternative.start + "/" + alternative.end : null;
+  const slotAvailability = slotKey && slotKey === checkedSlotKey ? availability.data : undefined;
+  const checkedFree =
+    slotAvailability?.isFree === true || Boolean(slotKey && slotKey === alternativeKey);
+  const checkedBusy = slotAvailability?.isFree === false;
+  const alternativeStart = alternative ? new Date(alternative.start) : null;
+  const localAlternative = alternativeStart
+    ? new Date(alternativeStart.getTime() - alternativeStart.getTimezoneOffset() * 60_000)
+        .toISOString()
+        .slice(0, 16)
+    : null;
+  const usableAlternative =
+    localAlternative && new Date(localAlternative).getTime() === alternativeStart?.getTime()
+      ? localAlternative
+      : null;
 
   const publish = useMutation({
     mutationFn: async (input: typeof calendarInput & { requireFreeSlot: boolean }) =>
@@ -567,12 +587,25 @@ function Integrations() {
             >
               {availability.isPending ? "Checking Calendar…" : "Check this time"}
             </Button>
-            {slotAvailability && (
+            {(checkedFree || checkedBusy) && (
               <p role="status" className="text-sm text-muted-foreground">
-                {slotAvailability.isFree
+                {checkedFree
                   ? "This time was free when checked. TaskBase will check again before sending."
-                  : "This time overlaps an event on your primary Calendar. Choose another time or send despite the conflict."}
+                  : usableAlternative
+                    ? "This time overlaps an event on your primary Calendar. A later opening fits this block."
+                    : "This time overlaps an event on your primary Calendar. No later opening on that date fits this block."}
               </p>
+            )}
+            {checkedBusy && usableAlternative && alternativeStart && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => setBlockStart(usableAlternative)}
+              >
+                Use {alternativeStart.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              </Button>
             )}
           </div>
         )}
@@ -589,11 +622,11 @@ function Integrations() {
             onClick={() =>
               publish.mutate({
                 ...calendarInput,
-                requireFreeSlot: slotAvailability?.isFree === true,
+                requireFreeSlot: checkedFree,
               })
             }
           >
-            {slotAvailability?.isFree === false ? "Send despite conflict" : "Send selected task"}
+            {checkedBusy ? "Send despite conflict" : "Send selected task"}
           </Button>
           <Button
             variant="outline"

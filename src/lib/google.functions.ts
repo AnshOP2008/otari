@@ -62,7 +62,7 @@ const calendarWindow = z.object({
   end: z.iso.datetime({ offset: true }),
 });
 
-async function readCalendarCapacity(data: z.infer<typeof calendarWindow>) {
+async function readFreeWindows(data: z.infer<typeof calendarWindow>) {
   const start = Date.parse(data.start);
   const end = Date.parse(data.end);
   if (!Number.isFinite(end - start) || end - start < 60_000 || end - start > 80 * 3_600_000) {
@@ -123,18 +123,24 @@ async function readCalendarCapacity(data: z.infer<typeof calendarWindow>) {
     .filter((block) => block.end > block.start)
     .sort((a, b) => a.start - b.start);
 
-  const free: number[] = [];
+  const free: { start: number; end: number }[] = [];
   let cursor = start;
   for (const block of busy) {
-    if (block.start > cursor) free.push(Math.floor((block.start - cursor) / 60_000));
+    if (block.start > cursor) free.push({ start: cursor, end: block.start });
     cursor = Math.max(cursor, block.end);
   }
-  if (cursor < end) free.push(Math.floor((end - cursor) / 60_000));
+  if (cursor < end) free.push({ start: cursor, end });
+  return { free, isFree: busy.length === 0 };
+}
+
+async function readCalendarCapacity(data: z.infer<typeof calendarWindow>) {
+  const { free, isFree } = await readFreeWindows(data);
+  const minutes = free.map(({ start, end }) => Math.floor((end - start) / 60_000));
   return {
-    isFree: busy.length === 0,
-    availableMinutes: free.reduce((sum, minutes) => sum + minutes, 0),
-    longestBlockMinutes: Math.max(0, ...free),
-    freeBlocks: free.filter((minutes) => minutes > 0).length,
+    isFree,
+    availableMinutes: minutes.reduce((sum, value) => sum + value, 0),
+    longestBlockMinutes: Math.max(0, ...minutes),
+    freeBlocks: minutes.filter((value) => value > 0).length,
   };
 }
 
@@ -142,6 +148,37 @@ export const checkCalendarCapacity = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(calendarWindow)
   .handler(({ data }) => readCalendarCapacity(data));
+
+export const checkCalendarFocusSlot = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(calendarWindow.extend({ searchEnd: z.iso.datetime({ offset: true }).optional() }))
+  .handler(async ({ data }) => {
+    const start = Date.parse(data.start);
+    const end = Date.parse(data.end);
+    const duration = end - start;
+    if (!Number.isFinite(duration) || duration < 60_000 || duration > 86_400_000) {
+      throw new Error("Choose a focus block from 1 minute to 24 hours.");
+    }
+    const horizon = data.searchEnd && Date.parse(data.searchEnd) > end ? data.searchEnd : data.end;
+    const { free } = await readFreeWindows({ ...data, end: horizon });
+    if (free[0]?.start === start && free[0].end >= end) {
+      return { isFree: true, alternative: null };
+    }
+    for (const window of free) {
+      // The device-time field accepts whole minutes. Never round back into a busy interval.
+      const next = Math.ceil(window.start / 60_000) * 60_000;
+      if (next + duration <= window.end) {
+        return {
+          isFree: false,
+          alternative: {
+            start: new Date(next).toISOString(),
+            end: new Date(next + duration).toISOString(),
+          },
+        };
+      }
+    }
+    return { isFree: false, alternative: null };
+  });
 
 async function storeSnapshot(
   db: Db,
