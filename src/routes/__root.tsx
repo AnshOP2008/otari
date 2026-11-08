@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 
 import appCss from "../styles.css?url";
 
@@ -27,7 +27,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   const router = useRouter();
 
   useEffect(() => {
@@ -38,7 +38,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="card-soft w-full max-w-md p-8 text-center">
         <h1 className="text-xl font-semibold">Something went wrong</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {error instanceof Error ? error.message : "The request could not be completed."}
+        </p>
         <button
           onClick={() => {
             router.invalidate();
@@ -92,6 +94,7 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
+    if (!hasBrowserSupabaseConfig) return;
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {

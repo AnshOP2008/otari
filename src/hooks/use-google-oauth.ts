@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { browserSupabaseKey, browserSupabaseUrl } from "@/integrations/supabase/client";
 
-const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_PROJECT_URL || "";
-const publishableKey =
-  import.meta.env.VITE_SUPABASE_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+const supabaseUrl = browserSupabaseUrl;
+const publishableKey = browserSupabaseKey;
 const local = /^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(supabaseUrl);
 
 export function useGoogleOAuth() {

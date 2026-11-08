@@ -10,7 +10,7 @@ import {
   ClipboardList,
   Plug,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -35,6 +35,7 @@ const navItems = [
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
+    if (!hasBrowserSupabaseConfig) throw redirect({ to: "/auth" });
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) {
       throw redirect({ to: "/auth" });
@@ -86,7 +87,8 @@ function AuthedLayout() {
               <PopoverContent align="start" className="w-md max-w-[calc(100vw-2rem)] text-sm">
                 <h4 className="mb-2 font-semibold">AI services</h4>
                 <p>
-                  TaskBase uses Mozilla Otari for AI generation. Source search runs in your database and uses no AI credits.
+                  TaskBase uses Mozilla Otari for AI generation. Source search runs in your database
+                  and uses no AI credits.
                 </p>
               </PopoverContent>
             </Popover>

@@ -1,5 +1,7 @@
 node_modules
 .output
+.tanstack
+.nitro
 dist
 build
 .git

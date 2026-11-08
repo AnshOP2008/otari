@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import { draftPlan, savePlan } from "@/lib/planner.functions";
 import { listDocuments, loadSourceBrief } from "@/lib/documents.functions";
 import { checkCalendarCapacity } from "@/lib/google.functions";
@@ -112,7 +112,7 @@ function PlanningDesk() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_KEY) return;
+    if (!hasBrowserSupabaseConfig) return;
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_, session) => {

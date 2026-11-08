@@ -31,6 +31,15 @@ secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET)"
 
 Set the public Supabase URL and publishable key before building. Set the server-side environment variables on the host at runtime. Run `npm run build` and start the output with `node .output/server/index.mjs`.
 
+For Docker, export the browser variables before building and supply the server settings when the container starts:
+
+```sh
+docker build --build-arg VITE_SUPABASE_URL --build-arg VITE_SUPABASE_KEY -t taskbase .
+docker run --rm -p 3000:3000 -e SUPABASE_URL -e SUPABASE_PUBLISHABLE_KEY -e OTARI_API_KEY -e OTARI_BASE_URL -e OTARI_PLANNER_MODEL -e OTARI_REVIEWER_MODEL taskbase
+```
+
+Use the Supabase publishable key for the build argument. Keep Google and Otari secrets in server-side runtime settings. When Supabase runs on the Docker Desktop host, the browser URL can be `http://127.0.0.1:54321` while the container's `SUPABASE_URL` is `http://host.docker.internal:54321`. A build without browser settings still opens the public Planning Desk example.
+
 In **Integrations**, grant Calendar read access for event imports and Gmail read access for inbox previews. Calendar can look ahead 7–60 days on your primary calendar or a shared calendar you select. Gmail supports an unread-only filter, a 5–20 message limit, and Gmail search expressions. Open a preview, expand the captured text, and select the entries to save. Importing replaces that source's saved snapshot. If a selected entry changes after the preview, refresh the preview and review it again. You can remove saved snapshots from TaskBase. Chat citations are stored with their replies.
 
 For an outbound action, select a single dated task and choose **Send selected task** after granting Calendar write access. Sending the same task again updates its event. **Prepare calendar file** creates an .ics download that exports the selected task without Google OAuth.

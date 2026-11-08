@@ -86,6 +86,7 @@ export const checkCalendarCapacity = createServerFn({ method: "POST" })
     const parsed = z
       .object({
         calendars: z.record(
+          z.string(),
           z.object({
             errors: z.array(z.unknown()).optional(),
             busy: z
@@ -181,7 +182,7 @@ const calendarResponse = z.object({
         end: z.object({ date: z.string().optional(), dateTime: z.string().optional() }).optional(),
         extendedProperties: z
           .object({
-            private: z.record(z.string()).optional(),
+            private: z.record(z.string(), z.string()).optional(),
           })
           .optional(),
       }),

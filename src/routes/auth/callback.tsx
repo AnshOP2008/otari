@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/auth/callback")({
   component: OAuthCallback,
@@ -8,8 +8,13 @@ export const Route = createFileRoute("/auth/callback")({
 
 function OAuthCallback() {
   const navigate = useNavigate();
-  const [message, setMessage] = useState("Completing Google sign-in…");
+  const [message, setMessage] = useState(
+    hasBrowserSupabaseConfig
+      ? "Completing Google sign-in…"
+      : "Sign-in needs a configured Supabase workspace.",
+  );
   useEffect(() => {
+    if (!hasBrowserSupabaseConfig) return;
     let active = true;
     const pending = sessionStorage.getItem("taskbase-google-connect");
 

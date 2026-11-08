@@ -27,7 +27,7 @@ const CreateTaskInput = z.object({
 
 export const createTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => CreateTaskInput.parse(d))
+  .validator(CreateTaskInput)
   .handler(async ({ context, data }) => {
     const { data: maxRow } = await context.supabase
       .from("tasks")
@@ -67,7 +67,7 @@ const UpdateTaskInput = z.object({
 
 export const updateTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => UpdateTaskInput.parse(d))
+  .validator(UpdateTaskInput)
   .handler(async ({ context, data }) => {
     const { id, ...patch } = data;
     const { data: row, error } = await context.supabase
@@ -83,7 +83,7 @@ export const updateTask = createServerFn({ method: "POST" })
 
 export const deleteTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase
       .from("tasks")
@@ -96,7 +96,7 @@ export const deleteTask = createServerFn({ method: "POST" })
 
 export const reorderTasks = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ orderedIds: z.array(z.string().uuid()) }).parse(d))
+  .validator(z.object({ orderedIds: z.array(z.string().uuid()) }))
   .handler(async ({ context, data }) => {
     // Update each in sequence; small lists so this is fine.
     await Promise.all(

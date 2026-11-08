@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGoogleOAuth } from "@/hooks/use-google-oauth";
@@ -58,61 +58,70 @@ function AuthPage() {
         <p className="text-sm text-muted-foreground">
           Upload sources, chat with your workspace, and save tasks to your board.
         </p>
-        {googleAvailable && (
-          <Button onClick={google} disabled={pending} variant="outline" className="w-full">
-            Continue with Google
-          </Button>
-        )}
-        {local && (
-          <p className="text-sm text-muted-foreground">
-            Local workspace. Email sign-in uses an account for this device.
+        {!hasBrowserSupabaseConfig ? (
+          <p role="status" className="rounded-lg border p-3 text-sm text-muted-foreground">
+            Sign-in needs a configured Supabase workspace. The Planning Desk example is available
+            from the home page.
           </p>
-        )}
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void emailAuth();
-          }}
-          className="space-y-3"
-        >
-          <label className="block text-sm">
-            Email
-            <Input
-              autoComplete="email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </label>
-          <label className="block text-sm">
-            Password
-            <Input
-              autoComplete="current-password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-          </label>
-          <Button type="submit" disabled={pending} className="w-full">
-            Sign in with email
-          </Button>
-          {local && (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={pending || !email || password.length < 8}
-              className="w-full"
-              onClick={(event) => {
-                const form = event.currentTarget.form;
-                if (form?.reportValidity()) void emailAuth(true);
+        ) : (
+          <>
+            {googleAvailable && (
+              <Button onClick={google} disabled={pending} variant="outline" className="w-full">
+                Continue with Google
+              </Button>
+            )}
+            {local && (
+              <p className="text-sm text-muted-foreground">
+                Local workspace. Email sign-in uses an account for this device.
+              </p>
+            )}
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void emailAuth();
               }}
+              className="space-y-3"
             >
-              Create local account
-            </Button>
-          )}
-        </form>
+              <label className="block text-sm">
+                Email
+                <Input
+                  autoComplete="email"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
+              </label>
+              <label className="block text-sm">
+                Password
+                <Input
+                  autoComplete="current-password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+              </label>
+              <Button type="submit" disabled={pending} className="w-full">
+                Sign in with email
+              </Button>
+              {local && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pending || !email || password.length < 8}
+                  className="w-full"
+                  onClick={(event) => {
+                    const form = event.currentTarget.form;
+                    if (form?.reportValidity()) void emailAuth(true);
+                  }}
+                >
+                  Create local account
+                </Button>
+              )}
+            </form>
+          </>
+        )}
       </div>
     </main>
   );
