@@ -55,7 +55,7 @@ export async function completeWithOtari(
   role: Role,
   instructions: string,
   input: unknown,
-  options: { tools?: Tool[]; json?: boolean } = {},
+  options: { tools?: Tool[]; json?: boolean; conversationId?: string } = {},
 ) {
   const { base, authorization } = connection();
   const model = (
@@ -69,7 +69,12 @@ export async function completeWithOtari(
   try {
     response = await fetch(base + "/chat/completions", {
       method: "POST",
-      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/json",
+        "User-Agent": "TaskBase/1.0",
+        ...(options.conversationId ? { "Otari-Conversation-Id": options.conversationId } : {}),
+      },
       body: JSON.stringify({
         model,
         messages: [

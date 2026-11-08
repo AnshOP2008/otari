@@ -65,7 +65,7 @@ The `pre-otari` tag records the older TaskBase source recovered from a separate 
 
 ## Record the submission
 
-Use the same repair café example from upload through planning. With Google OAuth available, use a demo inbox or calendar and show one relevant entry selected while a personal entry stays unselected. Show the search result and chat citation, load the source into Planning Desk, review the proposed deadline and capacity, save one task, and open it on the board. Expand **Otari run details** and match request IDs to the gateway's Requests view. For any tool, routing, or fallback you claim, show its actual gateway record.
+Follow the [demo runbook](docs/hackathon-demo.md) for the recording sequence, proof to capture, and submission links. **Otari run details** shows one session label for the planner, reviewer, and optional tool requests. Use the session or its request IDs to verify what ran in Otari.
 
 The [DoraHacks brief](https://dorahacks.io/hackathon/2468/detail) asks for a public repository, hackathon branch, first Otari commit link, a 3–5 minute participant-recorded demo, and feedback. The [judging rubric](https://docs.google.com/document/d/1-spnCZ3f2SSki8cb6FnochjchdyttUsjjxfoE6aBnF4/edit) gives credit for capabilities demonstrated in the working app.
 

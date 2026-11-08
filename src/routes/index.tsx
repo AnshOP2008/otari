@@ -31,8 +31,9 @@ const sampleBrief = [
   "Design a printed welcome sign if there is time.",
 ].join("\n\n");
 
-type Draft = Omit<Awaited<ReturnType<typeof draftPlan>>, "budgetBefore"> & {
+type Draft = Omit<Awaited<ReturnType<typeof draftPlan>>, "budgetBefore" | "conversationId"> & {
   budgetBefore: number | null;
+  conversationId?: string;
 };
 const sample: Draft = {
   tasks: [
@@ -644,6 +645,11 @@ function PlanningDesk() {
                     <summary className="cursor-pointer font-semibold">
                       <Braces className="mr-1 inline" size={14} /> Otari run details
                     </summary>
+                    {result.conversationId && (
+                      <p className="mt-2 break-all">
+                        Otari session <code>{result.conversationId}</code>
+                      </p>
+                    )}
                     {result.budgetBefore != null && (
                       <p className="mt-2">
                         Budget remaining before draft · ${result.budgetBefore.toFixed(4)}
