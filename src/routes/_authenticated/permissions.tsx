@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Calendar, Mail } from "lucide-react";
@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { listDocuments } from "@/lib/documents.functions";
 import { listTasks } from "@/lib/tasks.functions";
+import { useGoogleOAuth } from "@/hooks/use-google-oauth";
 import {
   downloadCalendarTask,
   exportCalendarTask,
   listGoogleCalendars,
+  previewGoogleImport,
   removeIntegrationDoc,
-  syncAll,
   syncCalendar,
   syncGmail,
 } from "@/lib/google.functions";
@@ -36,7 +37,7 @@ function Integrations() {
   const loadTasks = useServerFn(listTasks);
   const calendar = useServerFn(syncCalendar);
   const gmail = useServerFn(syncGmail);
-  const both = useServerFn(syncAll);
+  const loadPreview = useServerFn(previewGoogleImport);
   const remove = useServerFn(removeIntegrationDoc);
   const exportTask = useServerFn(exportCalendarTask);
   const downloadTask = useServerFn(downloadCalendarTask);
@@ -51,9 +52,9 @@ function Integrations() {
   const [maxEmails, setMaxEmails] = useState(10);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [gmailQuery, setGmailQuery] = useState("");
-  const local = /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(
-    import.meta.env.VITE_SUPABASE_URL || "",
-  );
+  const [selection, setSelection] = useState<string[]>([]);
+  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  const { googleAvailable } = useGoogleOAuth();
 
   const connect = useMutation({
     mutationFn: async (scope: keyof typeof scopes | "all") => {
@@ -86,26 +87,31 @@ function Integrations() {
     onError: (error) => toast.error(error.message),
   });
 
-  const sync = useMutation({
-    mutationFn: async (service: "calendar" | "gmail" | "all") => {
-      const data = {
-        accessToken: await getToken(),
-        calendarId,
-        days,
-        maxEmails,
-        unreadOnly,
-        gmailQuery,
-      };
-      if (service === "all") return both({ data });
-      const result = await (service === "calendar" ? calendar : gmail)({ data });
-      return [{ service: service === "calendar" ? "Calendar" : "Gmail", ...result, error: null }];
+  const preview = useMutation({
+    mutationFn: async (service: "calendar" | "gmail") => {
+      const filters = { calendarId, days, maxEmails, unreadOnly, gmailQuery };
+      const entries = await loadPreview({
+        data: { ...filters, service, accessToken: await getToken() },
+      });
+      return { entries, service, filters };
     },
-    onSuccess: (results) => {
+    onMutate: () => setSelection([]),
+    onError: (error) => toast.error(error.message),
+  });
+
+  const sync = useMutation({
+    mutationFn: async () => {
+      const reviewed = preview.data;
+      if (!reviewed || !selection.length) throw new Error("Choose entries to import.");
+      return (reviewed.service === "calendar" ? calendar : gmail)({
+        data: { ...reviewed.filters, selection, accessToken: await getToken() },
+      });
+    },
+    onSuccess: ({ imported }) => {
       void qc.invalidateQueries({ queryKey: ["documents"] });
-      for (const result of results) {
-        if (result.error) toast.error(result.error);
-        else toast.success(`${result.service}: imported ${result.imported} items`);
-      }
+      preview.reset();
+      setSelection([]);
+      toast.success(`Imported ${imported} reviewed ${imported === 1 ? "item" : "items"}.`);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -141,9 +147,14 @@ function Integrations() {
   }, [calendarFile]);
 
   const hasTask = eligible.some((task) => task.id === taskId);
+  const reviewed = preview.data;
+  useEffect(() => {
+    if (reviewed) reviewHeading.current?.focus();
+  }, [reviewed]);
   const busy =
     calendars.isPending ||
     connect.isPending ||
+    preview.isPending ||
     sync.isPending ||
     forget.isPending ||
     publish.isPending ||
@@ -155,7 +166,7 @@ function Integrations() {
         Choose what to import into your knowledge base. Importing does not spend AI credits. Chat
         uses your imported sources only when source search is enabled.
       </p>
-      {local && (
+      {!googleAvailable && (
         <p className="mt-4 rounded-lg border bg-card p-3 text-sm">
           Google OAuth is unavailable in this local workspace. Upload sample notes to test the same
           search and planning features.
@@ -186,7 +197,7 @@ function Integrations() {
             <Button
               variant="outline"
               size="sm"
-              disabled={busy || local}
+              disabled={busy || !googleAvailable}
               onClick={() => calendars.mutate()}
             >
               {calendars.isPending ? "Loading calendars…" : "Load shared calendars"}
@@ -209,13 +220,15 @@ function Integrations() {
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              disabled={busy || local}
+              disabled={busy || !googleAvailable}
               onClick={() => connect.mutate("calendar")}
             >
               Allow Calendar read
             </Button>
-            <Button disabled={busy || local} onClick={() => sync.mutate("calendar")}>
-              Import events
+            <Button disabled={busy || !googleAvailable} onClick={() => preview.mutate("calendar")}>
+              {preview.isPending && preview.variables === "calendar"
+                ? "Loading events…"
+                : "Preview events"}
             </Button>
           </div>
           <Snapshot
@@ -268,13 +281,15 @@ function Integrations() {
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              disabled={busy || local}
+              disabled={busy || !googleAvailable}
               onClick={() => connect.mutate("gmail")}
             >
               Allow Gmail read
             </Button>
-            <Button disabled={busy || local} onClick={() => sync.mutate("gmail")}>
-              Import inbox
+            <Button disabled={busy || !googleAvailable} onClick={() => preview.mutate("gmail")}>
+              {preview.isPending && preview.variables === "gmail"
+                ? "Loading inbox…"
+                : "Preview inbox"}
             </Button>
           </div>
           <Snapshot
@@ -287,13 +302,87 @@ function Integrations() {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button variant="outline" disabled={busy || local} onClick={() => connect.mutate("all")}>
+        <Button
+          variant="outline"
+          disabled={busy || !googleAvailable}
+          onClick={() => connect.mutate("all")}
+        >
           Allow both imports
         </Button>
-        <Button variant="outline" disabled={busy || local} onClick={() => sync.mutate("all")}>
-          Import both
-        </Button>
       </div>
+
+      {reviewed && (
+        <section className="card-soft mt-6 space-y-4 p-5" aria-labelledby="import-review">
+          <h2 id="import-review" className="text-xl" ref={reviewHeading} tabIndex={-1}>
+            Review {reviewed.service === "calendar" ? "Calendar events" : "Gmail messages"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Choose what TaskBase can search. Confirming replaces the saved snapshot for this source.
+          </p>
+          {reviewed.entries.length === 0 ? (
+            <p className="text-sm">No results matched. Your saved snapshot is still available.</p>
+          ) : (
+            <div className="max-h-80 space-y-2 overflow-y-auto">
+              {reviewed.entries.map((entry) => (
+                <div key={entry.key} className="rounded border border-border p-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selection.includes(entry.key)}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setSelection((current) =>
+                          checked
+                            ? [...current, entry.key]
+                            : current.filter((key) => key !== entry.key),
+                        );
+                      }}
+                    />
+                    {entry.title}
+                  </label>
+                  <details className="mt-1 pl-5 text-xs">
+                    <summary className="cursor-pointer text-muted-foreground">
+                      See captured text
+                    </summary>
+                    <p className="mt-1 whitespace-pre-wrap break-words">{entry.text}</p>
+                  </details>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={busy || !selection.length} onClick={() => sync.mutate()}>
+              {sync.isPending ? "Importing…" : `Import selected (${selection.length})`}
+            </Button>
+            {reviewed.entries.length > 0 && (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() =>
+                  setSelection(
+                    selection.length === reviewed.entries.length
+                      ? []
+                      : reviewed.entries.map((entry) => entry.key),
+                  )
+                }
+              >
+                {selection.length === reviewed.entries.length ? "Clear selection" : "Select all"}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                preview.reset();
+                setSelection([]);
+              }}
+            >
+              Close preview
+            </Button>
+          </div>
+        </section>
+      )}
 
       <section className="card-soft mt-6 space-y-4 p-5">
         <h2 className="text-2xl">Send one task to Calendar</h2>
@@ -318,12 +407,12 @@ function Integrations() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={busy || local}
+            disabled={busy || !googleAvailable}
             onClick={() => connect.mutate("export")}
           >
             Allow Calendar write
           </Button>
-          <Button disabled={busy || local || !hasTask} onClick={() => publish.mutate()}>
+          <Button disabled={busy || !googleAvailable || !hasTask} onClick={() => publish.mutate()}>
             Send selected task
           </Button>
           <Button variant="outline" disabled={busy || !hasTask} onClick={() => download.mutate()}>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useGoogleOAuth } from "@/hooks/use-google-oauth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
@@ -15,9 +16,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
-  const local = /^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(
-    import.meta.env.VITE_SUPABASE_URL || "",
-  );
+  const { local, googleAvailable } = useGoogleOAuth();
 
   async function google() {
     setPending(true);
@@ -59,14 +58,14 @@ function AuthPage() {
         <p className="text-sm text-muted-foreground">
           Upload sources, chat with your workspace, and save tasks to your board.
         </p>
-        {!local && (
+        {googleAvailable && (
           <Button onClick={google} disabled={pending} variant="outline" className="w-full">
             Continue with Google
           </Button>
         )}
         {local && (
           <p className="text-sm text-muted-foreground">
-            Local workspace. Use an email account for this device.
+            Local workspace. Email sign-in uses an account for this device.
           </p>
         )}
         <form

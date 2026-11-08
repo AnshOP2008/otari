@@ -20,6 +20,21 @@ const syncInput = z.object({
 });
 type SyncInput = z.infer<typeof syncInput>;
 type Db = SupabaseClient<Database>;
+const importInput = syncInput.extend({
+  selection: z
+    .array(z.string().regex(/^[a-f0-9]{64}$/))
+    .min(1)
+    .max(50)
+    .optional(),
+});
+
+type ImportEntry = { id: string; title: string; text: string };
+
+async function fingerprint(entry: ImportEntry) {
+  const bytes = new TextEncoder().encode(JSON.stringify([entry.id, entry.text]));
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 function googleFetch(url: string, token: string, init?: RequestInit) {
   return fetch(url, {
@@ -39,8 +54,36 @@ function googleFailure(response: Response, service: string) {
   );
 }
 
-async function storeSnapshot(db: Db, filename: string, entries: string[], label: string) {
-  const content = [label, "Imported at " + new Date().toISOString(), ...entries].join("\n\n");
+async function storeSnapshot(
+  db: Db,
+  filename: string,
+  entries: ImportEntry[],
+  label: string,
+  selection?: string[],
+) {
+  const chosen = selection ? new Set(selection) : null;
+  const included = chosen
+    ? (
+        await Promise.all(
+          entries.map(async (entry) => ({
+            entry,
+            selected: chosen.has(await fingerprint(entry)),
+          })),
+        )
+      )
+        .filter((item) => item.selected)
+        .map((item) => item.entry)
+    : entries;
+  if (chosen && included.length !== chosen.size) {
+    throw new Error(
+      "Google results changed since your preview. Refresh the preview before importing.",
+    );
+  }
+  const content = [
+    label,
+    "Imported at " + new Date().toISOString(),
+    ...included.map((entry) => entry.text),
+  ].join("\n\n");
   const { error } = await db.rpc("store_document", {
     document_name: filename,
     chunks: chunkText(content),
@@ -48,7 +91,7 @@ async function storeSnapshot(db: Db, filename: string, entries: string[], label:
   });
   if (error)
     throw new Error("Could not save the Google import. The previous copy is still available.");
-  return entries.length;
+  return included.length;
 }
 
 const calendarResponse = z.object({
@@ -113,7 +156,7 @@ export const listGoogleCalendars = createServerFn({ method: "POST" })
     return calendars;
   });
 
-async function importCalendar(db: Db, { accessToken, days, calendarId }: SyncInput) {
+async function readCalendar({ accessToken, days, calendarId }: SyncInput): Promise<ImportEntry[]> {
   const now = new Date();
   const params = new URLSearchParams({
     timeMin: now.toISOString(),
@@ -129,19 +172,20 @@ async function importCalendar(db: Db, { accessToken, days, calendarId }: SyncInp
   const response = await googleFetch(endpoint + "?" + params, accessToken);
   if (!response.ok) throw googleFailure(response, "Google Calendar");
   const { items } = calendarResponse.parse(await response.json());
-  const entries = items
+  return items
     .filter((event) => !event.extendedProperties?.private?.productivity_companion)
-    .map((event) =>
-      [
-        (event.summary || "Untitled event").slice(0, 300),
+    .map((event) => {
+      const title = (event.summary || "Untitled event").slice(0, 300);
+      const text = [
+        title,
         `Starts: ${event.start?.dateTime || event.start?.date || "Unknown"}`,
         `Ends: ${event.end?.dateTime || event.end?.date || "Unknown"}`,
         event.description?.slice(0, 600),
       ]
         .filter(Boolean)
-        .join("\n"),
-    );
-  return storeSnapshot(db, calendarFile, entries, `Google Calendar · Next ${days} days`);
+        .join("\n");
+      return { id: event.id, title, text };
+    });
 }
 
 const gmailList = z.object({ messages: z.array(z.object({ id: z.string() })).default([]) });
@@ -152,7 +196,12 @@ const gmailMessage = z.object({
     .optional(),
 });
 
-async function importGmail(db: Db, { accessToken, maxEmails, unreadOnly, gmailQuery }: SyncInput) {
+async function readGmail({
+  accessToken,
+  maxEmails,
+  unreadOnly,
+  gmailQuery,
+}: SyncInput): Promise<ImportEntry[]> {
   const params = new URLSearchParams({ maxResults: String(maxEmails) });
   params.append("labelIds", "INBOX");
   if (unreadOnly) params.append("labelIds", "UNREAD");
@@ -160,7 +209,7 @@ async function importGmail(db: Db, { accessToken, maxEmails, unreadOnly, gmailQu
   const response = await googleFetch(gmailApi + "?" + params, accessToken);
   if (!response.ok) throw googleFailure(response, "Gmail");
   const { messages } = gmailList.parse(await response.json());
-  const entries: string[] = [];
+  const entries: ImportEntry[] = [];
   for (const { id } of messages) {
     const message = await googleFetch(
       gmailApi +
@@ -175,17 +224,46 @@ async function importGmail(db: Db, { accessToken, maxEmails, unreadOnly, gmailQu
     const headers = new Map(
       payload?.headers.map(({ name, value }) => [name.toLowerCase(), value.slice(0, 300)]),
     );
-    entries.push(
-      `Subject: ${headers.get("subject") || "No subject"}\nFrom: ${headers.get("from") || "Unknown"}\nDate: ${headers.get("date") || "Unknown"}\n${snippet.slice(0, 700)}`,
-    );
+    const title = headers.get("subject") || "No subject";
+    const text = `Subject: ${title}\nFrom: ${headers.get("from") || "Unknown"}\nDate: ${headers.get("date") || "Unknown"}\n${snippet.slice(0, 700)}`;
+    entries.push({ id, title, text });
   }
+  return entries;
+}
+
+async function importCalendar(db: Db, data: z.infer<typeof importInput>) {
+  return storeSnapshot(
+    db,
+    calendarFile,
+    await readCalendar(data),
+    `Google Calendar · Next ${data.days} days`,
+    data.selection,
+  );
+}
+
+async function importGmail(db: Db, data: z.infer<typeof importInput>) {
   return storeSnapshot(
     db,
     gmailFile,
-    entries,
-    unreadOnly ? "Gmail · Unread inbox" : "Gmail · Inbox",
+    await readGmail(data),
+    data.unreadOnly ? "Gmail · Unread inbox" : "Gmail · Inbox",
+    data.selection,
   );
 }
+
+export const previewGoogleImport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(syncInput.extend({ service: z.enum(["calendar", "gmail"]) }))
+  .handler(async ({ data }) => {
+    const entries = await (data.service === "calendar" ? readCalendar(data) : readGmail(data));
+    return Promise.all(
+      entries.map(async (entry) => ({
+        key: await fingerprint(entry),
+        title: entry.title,
+        text: entry.text,
+      })),
+    );
+  });
 
 export const removeIntegrationDoc = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -202,14 +280,14 @@ export const removeIntegrationDoc = createServerFn({ method: "POST" })
 
 export const syncCalendar = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(syncInput)
+  .validator(importInput)
   .handler(async ({ context, data }) => ({
     imported: await importCalendar(context.supabase, data),
   }));
 
 export const syncGmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(syncInput)
+  .validator(importInput)
   .handler(async ({ context, data }) => ({ imported: await importGmail(context.supabase, data) }));
 
 export const syncAll = createServerFn({ method: "POST" })

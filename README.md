@@ -17,9 +17,21 @@ Uploads and source search use PostgreSQL and spend no model credits. Existing re
 
 For a hosted build, apply all migrations to the intended Supabase project, enable Google as a sign-in provider, and configure the Google Calendar and Gmail APIs for the OAuth client. Add the hosted app's `/auth/callback` URL to Supabase's allowed redirects. The Google consent screen must allow the account you're using. Follow [Supabase's Google configuration guide](https://supabase.com/docs/guides/auth/social-login/auth-google).
 
+To test Google locally, use `http://127.0.0.1:54321/auth/v1/callback` as the OAuth client's redirect URI, then add the following to your local `supabase/config.toml`. Use the port where TaskBase is running. Put the client ID and secret in the ignored `.env` and restart the local Supabase stack. TaskBase reads the local provider setting and enables Google sign-in once it is available.
+
+```toml
+[auth]
+additional_redirect_urls = ["http://127.0.0.1:3218/auth/callback"]
+
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET)"
+```
+
 Set the public Supabase URL and publishable key before building. Set the server-side environment variables on the host at runtime. Run `npm run build` and start the output with `node .output/server/index.mjs`.
 
-In **Integrations**, grant Calendar read access for event imports and Gmail read access for inbox previews. Calendar import can look ahead 7–60 days on your primary calendar or a shared calendar you select. Gmail import supports an unread-only filter, a 5–20 message limit, and Gmail search expressions. Imported snapshots can be removed from TaskBase. Chat citations are stored with their replies.
+In **Integrations**, grant Calendar read access for event imports and Gmail read access for inbox previews. Calendar can look ahead 7–60 days on your primary calendar or a shared calendar you select. Gmail supports an unread-only filter, a 5–20 message limit, and Gmail search expressions. Open a preview, expand the captured text, and select the entries to save. Importing replaces that source's saved snapshot. If a selected entry changes after the preview, refresh the preview and review it again. You can remove saved snapshots from TaskBase. Chat citations are stored with their replies.
 
 For an outbound action, select a single dated task and choose **Send selected task** after granting Calendar write access. Sending the same task again updates its event. **Prepare calendar file** creates an .ics download that exports the selected task without Google OAuth.
 
@@ -38,7 +50,7 @@ The `pre-otari` tag records the older TaskBase source recovered from a separate 
 
 ## Record the submission
 
-Use the same repair café example from upload through planning. Show the search result and chat citation, load the source into Planning Desk, review the proposed deadline and capacity, save one task, and open it on the board. Expand **Otari run details** and match request IDs to the gateway's Requests view. For any tool, routing, or fallback you claim, show its actual gateway record.
+Use the same repair café example from upload through planning. With Google OAuth available, use a demo inbox or calendar and show one relevant entry selected while a personal entry stays unselected. Show the search result and chat citation, load the source into Planning Desk, review the proposed deadline and capacity, save one task, and open it on the board. Expand **Otari run details** and match request IDs to the gateway's Requests view. For any tool, routing, or fallback you claim, show its actual gateway record.
 
 The [DoraHacks brief](https://dorahacks.io/hackathon/2468/detail) asks for a public repository, hackathon branch, first Otari commit link, a 3–5 minute participant-recorded demo, and feedback. The [judging rubric](https://docs.google.com/document/d/1-spnCZ3f2SSki8cb6FnochjchdyttUsjjxfoE6aBnF4/edit) gives credit for capabilities demonstrated in the working app.
 
