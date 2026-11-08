@@ -327,7 +327,7 @@ function DocumentsPage() {
           <div className="mt-3 space-y-2" role="status">
             <p className="text-xs text-muted-foreground">
               {searchMut.data.length
-                ? `${searchMut.data.length} matching passages`
+                ? `${searchMut.data.length} matching passage${searchMut.data.length === 1 ? "" : "s"}`
                 : "No matching passages."}
             </p>
             {searchMut.data.map((source) => (

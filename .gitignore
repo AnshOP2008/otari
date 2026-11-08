@@ -34,5 +34,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
+client_secret*.json
 supabase/.temp/
 supabase/.branches/
