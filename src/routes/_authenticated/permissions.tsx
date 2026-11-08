@@ -11,6 +11,7 @@ import { listTasks } from "@/lib/tasks.functions";
 import {
   downloadCalendarTask,
   exportCalendarTask,
+  listGoogleCalendars,
   removeIntegrationDoc,
   syncAll,
   syncCalendar,
@@ -39,14 +40,17 @@ function Integrations() {
   const remove = useServerFn(removeIntegrationDoc);
   const exportTask = useServerFn(exportCalendarTask);
   const downloadTask = useServerFn(downloadCalendarTask);
+  const loadCalendars = useServerFn(listGoogleCalendars);
   const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => loadDocs() });
   const { data: tasks = [] } = useQuery({ queryKey: ["tasks"], queryFn: () => loadTasks() });
   const eligible = tasks.filter((task) => task.due_date && task.status !== "done");
   const [taskId, setTaskId] = useState("");
   const [calendarFile, setCalendarFile] = useState<{ taskId: string; url: string } | null>(null);
   const [days, setDays] = useState(14);
+  const [calendarId, setCalendarId] = useState("primary");
   const [maxEmails, setMaxEmails] = useState(10);
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [gmailQuery, setGmailQuery] = useState("");
   const local = /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(
     import.meta.env.VITE_SUPABASE_URL || "",
   );
@@ -77,9 +81,21 @@ function Integrations() {
     return data.session.provider_token;
   }
 
+  const calendars = useMutation({
+    mutationFn: async () => loadCalendars({ data: { accessToken: await getToken() } }),
+    onError: (error) => toast.error(error.message),
+  });
+
   const sync = useMutation({
     mutationFn: async (service: "calendar" | "gmail" | "all") => {
-      const data = { accessToken: await getToken(), days, maxEmails, unreadOnly };
+      const data = {
+        accessToken: await getToken(),
+        calendarId,
+        days,
+        maxEmails,
+        unreadOnly,
+        gmailQuery,
+      };
       if (service === "all") return both({ data });
       const result = await (service === "calendar" ? calendar : gmail)({ data });
       return [{ service: service === "calendar" ? "Calendar" : "Gmail", ...result, error: null }];
@@ -126,6 +142,7 @@ function Integrations() {
 
   const hasTask = eligible.some((task) => task.id === taskId);
   const busy =
+    calendars.isPending ||
     connect.isPending ||
     sync.isPending ||
     forget.isPending ||
@@ -150,6 +167,31 @@ function Integrations() {
           <h2 className="flex items-center gap-2 text-2xl">
             <Calendar size={20} /> Calendar import
           </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-sm">
+              Calendar
+              <select
+                value={calendarId}
+                onChange={(event) => setCalendarId(event.target.value)}
+                className="ml-2 max-w-52 rounded border bg-background p-1"
+              >
+                <option value="primary">Primary calendar</option>
+                {calendars.data?.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || local}
+              onClick={() => calendars.mutate()}
+            >
+              {calendars.isPending ? "Loading calendars…" : "Load shared calendars"}
+            </Button>
+          </div>
           <label className="block text-sm">
             Look ahead
             <select
@@ -209,6 +251,16 @@ function Integrations() {
               onChange={(event) => setUnreadOnly(event.target.checked)}
             />{" "}
             Unread only
+          </label>
+          <label className="block text-sm">
+            Gmail search filter (optional)
+            <input
+              value={gmailQuery}
+              onChange={(event) => setGmailQuery(event.target.value)}
+              maxLength={160}
+              placeholder="e.g. subject:handoff newer_than:14d"
+              className="mt-1 block w-full rounded border bg-background px-2 py-1.5"
+            />
           </label>
           <p className="text-xs text-muted-foreground">
             Imports sender, subject, date and preview. No attachments or email sending.

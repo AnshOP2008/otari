@@ -19,7 +19,7 @@ For a hosted build, apply all migrations to the intended Supabase project, enabl
 
 Set the public Supabase URL and publishable key before building. Set the server-side environment variables on the host at runtime. Run `npm run build` and start the output with `node .output/server/index.mjs`.
 
-In **Integrations**, grant Calendar read access for event imports and Gmail read access for inbox previews. Calendar import can look ahead 7–60 days. Gmail import supports an unread-only filter and a 5–20 message limit. Imported snapshots can be removed from TaskBase. Chat citations are stored with their replies.
+In **Integrations**, grant Calendar read access for event imports and Gmail read access for inbox previews. Calendar import can look ahead 7–60 days on your primary calendar or a shared calendar you select. Gmail import supports an unread-only filter, a 5–20 message limit, and Gmail search expressions. Imported snapshots can be removed from TaskBase. Chat citations are stored with their replies.
 
 For an outbound action, select a single dated task and choose **Send selected task** after granting Calendar write access. Sending the same task again updates its event. **Prepare calendar file** creates an .ics download that exports the selected task without Google OAuth.
 

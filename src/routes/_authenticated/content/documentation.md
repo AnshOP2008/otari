@@ -16,6 +16,6 @@ You can also select **Find New Tasks** on the board to append supported tasks fr
 
 ## Connect Google
 
-In **Integrations**, grant Calendar or Gmail read access for the import you need. Set the date range, inbox count, or unread filter before importing. Imports update the source snapshot in your knowledge base.
+In **Integrations**, grant Calendar or Gmail read access for the import you need. Select a calendar and date range for events. For Gmail, choose an inbox count, unread filter, or a search expression. Imports update the source snapshot in your knowledge base.
 
 To send a task to Google Calendar, choose one open task with a due date and use **Send selected task** after enabling Calendar write. You can also **Prepare calendar file** and download the .ics without a Google connection.

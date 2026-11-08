@@ -12,9 +12,11 @@ const gmailApi = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 
 const syncInput = z.object({
   accessToken: z.string().min(1).max(4096),
+  calendarId: z.string().min(1).max(512).default("primary"),
   days: z.number().int().min(1).max(60).default(14),
   maxEmails: z.number().int().min(1).max(20).default(10),
   unreadOnly: z.boolean().default(false),
+  gmailQuery: z.string().trim().max(160).default(""),
 });
 type SyncInput = z.infer<typeof syncInput>;
 type Db = SupabaseClient<Database>;
@@ -70,7 +72,48 @@ const calendarResponse = z.object({
     .default([]),
 });
 
-async function importCalendar(db: Db, { accessToken, days }: SyncInput) {
+export const listGoogleCalendars = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(z.object({ accessToken: z.string().min(1).max(4096) }))
+  .handler(async ({ data }) => {
+    const schema = z.object({
+      items: z
+        .array(
+          z.object({
+            id: z.string(),
+            summary: z.string(),
+            summaryOverride: z.string().optional(),
+            primary: z.boolean().optional(),
+          }),
+        )
+        .default([]),
+      nextPageToken: z.string().optional(),
+    });
+    const calendars = [];
+    let cursor: string | undefined;
+    do {
+      const params = new URLSearchParams({ minAccessRole: "reader", maxResults: "250" });
+      if (cursor) params.set("pageToken", cursor);
+      const response = await googleFetch(
+        "https://www.googleapis.com/calendar/v3/users/me/calendarList?" + params,
+        data.accessToken,
+      );
+      if (!response.ok) throw googleFailure(response, "Google Calendar");
+      const page = schema.parse(await response.json());
+      calendars.push(
+        ...page.items
+          .filter((item) => !item.primary)
+          .map((item) => ({
+            id: item.id,
+            name: item.summaryOverride || item.summary,
+          })),
+      );
+      cursor = page.nextPageToken;
+    } while (cursor);
+    return calendars;
+  });
+
+async function importCalendar(db: Db, { accessToken, days, calendarId }: SyncInput) {
   const now = new Date();
   const params = new URLSearchParams({
     timeMin: now.toISOString(),
@@ -79,7 +122,11 @@ async function importCalendar(db: Db, { accessToken, days }: SyncInput) {
     singleEvents: "true",
     orderBy: "startTime",
   });
-  const response = await googleFetch(calendarApi + "?" + params, accessToken);
+  const endpoint =
+    "https://www.googleapis.com/calendar/v3/calendars/" +
+    encodeURIComponent(calendarId) +
+    "/events";
+  const response = await googleFetch(endpoint + "?" + params, accessToken);
   if (!response.ok) throw googleFailure(response, "Google Calendar");
   const { items } = calendarResponse.parse(await response.json());
   const entries = items
@@ -105,10 +152,11 @@ const gmailMessage = z.object({
     .optional(),
 });
 
-async function importGmail(db: Db, { accessToken, maxEmails, unreadOnly }: SyncInput) {
+async function importGmail(db: Db, { accessToken, maxEmails, unreadOnly, gmailQuery }: SyncInput) {
   const params = new URLSearchParams({ maxResults: String(maxEmails) });
   params.append("labelIds", "INBOX");
   if (unreadOnly) params.append("labelIds", "UNREAD");
+  if (gmailQuery) params.set("q", gmailQuery);
   const response = await googleFetch(gmailApi + "?" + params, accessToken);
   if (!response.ok) throw googleFailure(response, "Gmail");
   const { messages } = gmailList.parse(await response.json());
