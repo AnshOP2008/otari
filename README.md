@@ -46,7 +46,7 @@ For an outbound action, select **All-day due date** or **Timed focus block**. A 
 
 For a focus block, use **Check this time** after granting free/busy access. If Calendar reports a conflict, TaskBase offers the earliest later opening that fits on the selected date, when one exists. You can review and choose that start time or explicitly send despite the conflict. TaskBase rechecks a checked free slot immediately before writing it. The check includes any existing copy of this task's event and uses busy times only.
 
-In **Planning Desk**, open **Use Calendar availability** to check a work window on your primary calendar. Grant **Allow free/busy access** in Integrations if you only need availability. Planning Desk shows total free time and the longest uninterrupted block. If you apply the result, the reviewer receives those two durations and the app flags tasks that need to be split or deferred. Event details and timestamps are excluded from that AI request.
+In **Planning Desk**, open **Use Calendar availability** to check a work window on your primary calendar. Grant **Allow free/busy access** in Integrations if you only need availability. Planning Desk shows total free time and the longest uninterrupted block. If you apply the result, the reviewer receives those two durations and the app flags tasks that need to be split or deferred. Event details and timestamps are excluded from that AI request. In **Review**, you can adjust estimates before saving. The selected total and Calendar fit update as you edit, and the reviewer notes retain the original estimate context.
 
 ## Enable Otari
 

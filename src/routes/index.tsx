@@ -32,6 +32,12 @@ const sampleBrief = [
   "Design a printed welcome sign if there is time.",
 ].join("\n\n");
 const BRIEF_LIMIT = 8000;
+const MIN_ESTIMATE = 5;
+const MAX_ESTIMATE = 2400;
+
+function validEstimate(minutes: number) {
+  return Number.isInteger(minutes) && minutes >= MIN_ESTIMATE && minutes <= MAX_ESTIMATE;
+}
 
 type Draft = Omit<Awaited<ReturnType<typeof draftPlan>>, "budgetBefore" | "conversationId"> & {
   budgetBefore: number | null;
@@ -116,6 +122,8 @@ function PlanningDesk() {
   const [result, setResult] = useState<Draft | null>(sample);
   const [example, setExample] = useState(true);
   const [availableMinutes, setAvailableMinutes] = useState(120);
+  const [longestBlock, setLongestBlock] = useState<number | null>(null);
+  const [estimates, setEstimates] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState(new Set(["venue", "volunteers"]));
   const [pending, setPending] = useState<"draft" | "save" | null>(null);
   const [error, setError] = useState("");
@@ -131,14 +139,26 @@ function PlanningDesk() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const chosen = result?.tasks.filter((task) => selected.has(task.id)) ?? [];
-  const chosenMinutes = chosen.reduce((total, task) => total + task.minutes, 0);
+  const chosen =
+    result?.tasks
+      .filter((task) => selected.has(task.id))
+      .map((task) => ({ ...task, minutes: estimates[task.id] ?? task.minutes })) ?? [];
+  const hasInvalidEstimate = chosen.some((task) => !validEstimate(task.minutes));
+  const chosenMinutes = chosen.reduce(
+    (total, task) => total + (validEstimate(task.minutes) ? task.minutes : 0),
+    0,
+  );
+  const hasAdjustedEstimate = result?.tasks.some(
+    (task) => estimates[task.id] !== undefined && estimates[task.id] !== task.minutes,
+  );
 
   function resetSample() {
     setBrief(sampleBrief);
     setHours(2);
     setUseCalendar(false);
     setAvailableMinutes(120);
+    setLongestBlock(null);
+    setEstimates({});
     setResearchTopic("");
     setCapacityCheck(false);
     setExample(true);
@@ -164,6 +184,7 @@ function PlanningDesk() {
   function replaceBrief(text: string) {
     setBrief(text);
     setResult(null);
+    setEstimates({});
     setSaved(false);
     setError("");
   }
@@ -196,6 +217,7 @@ function PlanningDesk() {
     setPending("draft");
     setError("");
     setResult(null);
+    setEstimates({});
     setSaved(false);
     try {
       const plan = await draft({
@@ -208,6 +230,7 @@ function PlanningDesk() {
       });
       setResult(plan);
       setAvailableMinutes(calendarCapacity?.availableMinutes ?? hours * 60);
+      setLongestBlock(calendarCapacity?.longestBlockMinutes ?? null);
       setExample(false);
       setSelected(new Set(plan.tasks.filter((task) => !task.hold).map((task) => task.id)));
     } catch (cause) {
@@ -256,7 +279,7 @@ function PlanningDesk() {
   }
 
   async function addTasks() {
-    if (pending || example || !chosen.length || !signedIn || saved) return;
+    if (pending || example || !chosen.length || hasInvalidEstimate || !signedIn || saved) return;
     setPending("save");
     setError("");
     try {
@@ -634,40 +657,84 @@ function PlanningDesk() {
               <>
                 <p className="mt-4 text-sm leading-relaxed text-[#4f6357]">{result.summary}</p>
                 <p role="status" className="mt-3 text-sm font-semibold">
-                  {chosenMinutes} / {availableMinutes} min selected
-                  {chosenMinutes > availableMinutes ? " · over capacity" : ""}
+                  {hasInvalidEstimate
+                    ? "Enter a valid estimate for every selected task."
+                    : `${chosenMinutes} / ${availableMinutes} min selected${chosenMinutes > availableMinutes ? " · over capacity" : ""}`}
                 </p>
+                {hasAdjustedEstimate && (
+                  <p className="mt-1 text-xs text-[#4f6357]">
+                    Totals use your edits. Reviewer notes and any Otari capacity check reflect the
+                    original estimates.
+                  </p>
+                )}
                 <ul className="mt-4 space-y-2">
-                  {result.tasks.map((task) => (
-                    <li key={task.id} className="rounded-xl border border-[#d6ddd0] bg-white p-3.5">
-                      <label className="flex items-start gap-3 text-sm font-semibold">
-                        <input
-                          className="mt-1 accent-[#224938]"
-                          type="checkbox"
-                          checked={selected.has(task.id)}
-                          disabled={!!pending || saved}
-                          onChange={(event) => {
-                            const next = new Set(selected);
-                            if (event.target.checked) next.add(task.id);
-                            else next.delete(task.id);
-                            setSelected(next);
-                          }}
-                        />
-                        {task.title}
-                      </label>
-                      <div className="ml-6 mt-1 space-y-1.5 text-xs leading-relaxed text-[#4f6357]">
-                        <p className="font-semibold capitalize">
-                          {task.priority} priority · {task.minutes} min
-                          {task.dueDate ? " · Due " + task.dueDate : ""}
-                        </p>
-                        <p>{task.description}</p>
-                        <blockquote className="border-l-2 border-[#b8cda7] pl-2">
-                          “{task.evidence}”
-                        </blockquote>
-                        {task.hold && <p className="text-[#815121]">Review note · {task.hold}</p>}
-                      </div>
-                    </li>
-                  ))}
+                  {result.tasks.map((task) => {
+                    const estimate = estimates[task.id] ?? task.minutes;
+                    return (
+                      <li
+                        key={task.id}
+                        className="rounded-xl border border-[#d6ddd0] bg-white p-3.5"
+                      >
+                        <label className="flex items-start gap-3 text-sm font-semibold">
+                          <input
+                            className="mt-1 accent-[#224938]"
+                            type="checkbox"
+                            checked={selected.has(task.id)}
+                            disabled={!!pending || saved}
+                            onChange={(event) => {
+                              const next = new Set(selected);
+                              if (event.target.checked) next.add(task.id);
+                              else next.delete(task.id);
+                              setSelected(next);
+                            }}
+                          />
+                          {task.title}
+                        </label>
+                        <div className="ml-6 mt-1 space-y-1.5 text-xs leading-relaxed text-[#4f6357]">
+                          <p className="font-semibold capitalize">
+                            {task.priority} priority
+                            {task.dueDate ? " · Due " + task.dueDate : ""}
+                          </p>
+                          <label className="flex flex-wrap items-center gap-2">
+                            <span>Estimated minutes</span>
+                            <input
+                              aria-label={`Estimated minutes for ${task.title}`}
+                              aria-invalid={!validEstimate(estimate)}
+                              type="number"
+                              min={MIN_ESTIMATE}
+                              max={MAX_ESTIMATE}
+                              step={1}
+                              value={Number.isNaN(estimate) ? "" : estimate}
+                              disabled={!!pending || saved}
+                              onChange={(event) => {
+                                const minutes = event.target.valueAsNumber;
+                                setEstimates((current) => ({ ...current, [task.id]: minutes }));
+                              }}
+                              className="w-20 rounded border border-[#cbd6c7] px-2 py-1"
+                            />
+                            {estimate !== task.minutes && (
+                              <span>Originally {task.minutes} min</span>
+                            )}
+                          </label>
+                          {!validEstimate(estimate) && (
+                            <p className="text-red-800">Enter 5 to 2,400 whole minutes.</p>
+                          )}
+                          {validEstimate(estimate) &&
+                            longestBlock != null &&
+                            estimate > longestBlock && (
+                              <p className="text-[#815121]">
+                                This estimate exceeds the {longestBlock}-minute Calendar opening.
+                              </p>
+                            )}
+                          <p>{task.description}</p>
+                          <blockquote className="border-l-2 border-[#b8cda7] pl-2">
+                            “{task.evidence}”
+                          </blockquote>
+                          {task.hold && <p className="text-[#815121]">Review note · {task.hold}</p>}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
                 {result.research && (
                   <p className="mt-4 whitespace-pre-wrap break-words text-sm">
@@ -733,7 +800,9 @@ function PlanningDesk() {
                     <Button
                       type="button"
                       onClick={addTasks}
-                      disabled={!!pending || saved || chosen.length === 0 || !signedIn}
+                      disabled={
+                        !!pending || saved || chosen.length === 0 || hasInvalidEstimate || !signedIn
+                      }
                       className="bg-[#224938] text-white hover:bg-[#173a2c]"
                     >
                       <Check size={15} />{" "}
