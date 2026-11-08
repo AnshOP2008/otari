@@ -61,6 +61,8 @@ export type Database = {
           created_at: string;
           document_id: string;
           embedding: string | null;
+          source_title: string | null;
+          source_url: string | null;
           id: string;
           user_id: string;
         };
@@ -70,6 +72,8 @@ export type Database = {
           created_at?: string;
           document_id: string;
           embedding?: string | null;
+          source_title?: string | null;
+          source_url?: string | null;
           id?: string;
           user_id: string;
         };
@@ -79,6 +83,8 @@ export type Database = {
           created_at?: string;
           document_id?: string;
           embedding?: string | null;
+          source_title?: string | null;
+          source_url?: string | null;
           id?: string;
           user_id?: string;
         };
@@ -190,7 +196,14 @@ export type Database = {
           overview?: boolean;
           source_id?: string;
         };
-        Returns: { document_id: string; name: string; chunk_index: number; content: string }[];
+        Returns: {
+          document_id: string;
+          name: string;
+          chunk_index: number;
+          content: string;
+          source_title: string | null;
+          source_url: string | null;
+        }[];
       };
       store_document: {
         Args: {
@@ -198,6 +211,7 @@ export type Database = {
           chunks: string[];
           replace_existing?: boolean;
           progress_id?: string;
+          chunk_details?: Json;
         };
         Returns: string;
       };

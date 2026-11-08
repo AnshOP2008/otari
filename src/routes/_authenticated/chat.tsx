@@ -6,6 +6,8 @@ import { FileText, ListTodo, Loader2, Send, Sparkles, Trash2 } from "lucide-reac
 import { toast } from "sonner";
 import { AgentTimeline, REFINE_STEPS } from "@/components/ai/agent-timeline";
 import { Button } from "@/components/ui/button";
+import { CalendarSourceLink } from "@/components/calendar-source-link";
+import { sourceHeading } from "@/lib/document-text";
 import { Textarea } from "@/components/ui/textarea";
 import { chat, clearChat, listChatMessages, refineTasksWithAI } from "@/lib/ai.functions";
 import { z } from "zod";
@@ -42,6 +44,8 @@ const sourceRefs = z.array(
     name: z.string(),
     section: z.number(),
     excerpt: z.string(),
+    title: z.string().nullish(),
+    url: z.string().nullish(),
   }),
 );
 
@@ -319,11 +323,12 @@ function SourceNotes({ value }: { value: unknown }) {
       {parsed.data.map((source) => (
         <div key={source.number} className="mt-3">
           <strong>
-            [{source.number}] {source.name} · section {source.section}
+            [{source.number}] {sourceHeading(source)}
           </strong>
           <blockquote className="my-1 max-h-40 overflow-auto whitespace-pre-wrap">
             {source.excerpt}
           </blockquote>
+          <CalendarSourceLink url={source.url} />
         </div>
       ))}
     </details>

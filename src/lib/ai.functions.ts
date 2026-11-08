@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { generateOtariText } from "./otari.server";
 import { formatSources, retrieveSources } from "./rag.server";
+import { sourceHeading } from "./document-text";
 
 function modelJson<T extends z.ZodTypeAny>(schema: T, text: string): z.output<T> {
   try {
@@ -65,7 +66,7 @@ export const refineTasksWithAI = createServerFn({ method: "POST" })
           description: task.description,
           priority: task.priority,
           due_date: task.due_date && task.evidence.includes(task.due_date) ? task.due_date : null,
-          ai_reason: (source ? source.name : "Recent chat") + ": " + task.evidence,
+          ai_reason: (source ? sourceHeading(source) : "Recent chat") + ": " + task.evidence,
         },
       ];
     });

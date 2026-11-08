@@ -6,6 +6,7 @@ import { Calendar, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
+import { CalendarSourceLink } from "@/components/calendar-source-link";
 import { supabase } from "@/integrations/supabase/client";
 import { listDocuments } from "@/lib/documents.functions";
 import { listTasks } from "@/lib/tasks.functions";
@@ -494,6 +495,7 @@ function Integrations() {
                       See captured text
                     </summary>
                     <p className="mt-1 whitespace-pre-wrap break-words">{entry.text}</p>
+                    <CalendarSourceLink url={entry.url} />
                   </details>
                 </div>
               ))}

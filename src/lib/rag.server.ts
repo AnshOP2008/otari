@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { excerptForQuery, searchTerms } from "./document-text";
+import { calendarSourceUrl, excerptForQuery, searchTerms, sourceHeading } from "./document-text";
 
 export async function retrieveSources(
   supabase: SupabaseClient<Database>,
@@ -21,6 +21,8 @@ export async function retrieveSources(
     id: row.document_id,
     name: row.name,
     section: row.chunk_index + 1,
+    title: row.source_title,
+    url: calendarSourceUrl(row.source_url),
     excerpt: excerptForQuery(row.content, query),
   }));
 }
@@ -29,8 +31,6 @@ export type Source = Awaited<ReturnType<typeof retrieveSources>>[number];
 
 export function formatSources(sources: Source[]) {
   return sources
-    .map(
-      ({ number, name, section, excerpt }) => `[${number}] ${name}, section ${section}\n${excerpt}`,
-    )
+    .map((source) => `[${source.number}] ${sourceHeading(source)}\n${source.excerpt}`)
     .join("\n\n");
 }

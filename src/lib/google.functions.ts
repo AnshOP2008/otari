@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
-import { normalizeText } from "./document-text";
+import { calendarSourceUrl, normalizeText } from "./document-text";
 
 const calendarFile = "calendar!@#.txt";
 const gmailFile = "gmail!@#.txt";
@@ -39,10 +39,10 @@ const importInput = syncInput.extend({
     .optional(),
 });
 
-type ImportEntry = { id: string; title: string; text: string };
+type ImportEntry = { id: string; title: string; text: string; url?: string | null };
 
 async function fingerprint(entry: ImportEntry) {
-  const bytes = new TextEncoder().encode(JSON.stringify([entry.id, entry.text]));
+  const bytes = new TextEncoder().encode(JSON.stringify([entry.id, entry.text, entry.url]));
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -221,6 +221,9 @@ async function storeSnapshot(
     document_name: filename,
     chunks: chunks.length ? chunks : [stamp],
     replace_existing: true,
+    ...(included.length
+      ? { chunk_details: included.map(({ title, url }) => ({ title, url: url ?? null })) }
+      : {}),
   });
   if (error)
     throw new Error("Could not save the Google import. The previous copy is still available.");
@@ -233,6 +236,7 @@ const calendarResponse = z.object({
       z.object({
         id: z.string(),
         summary: z.string().optional(),
+        htmlLink: z.string().optional(),
         description: z.string().optional(),
         start: z
           .object({ date: z.string().optional(), dateTime: z.string().optional() })
@@ -317,7 +321,7 @@ async function readCalendar({ accessToken, days, calendarId }: SyncInput): Promi
       ]
         .filter(Boolean)
         .join("\n");
-      return { id: event.id, title, text };
+      return { id: event.id, title, text, url: calendarSourceUrl(event.htmlLink) };
     });
 }
 
@@ -453,6 +457,7 @@ export const previewGoogleImport = createServerFn({ method: "POST" })
         key: await fingerprint(entry),
         title: entry.title,
         text: entry.text,
+        url: entry.url ?? null,
       })),
     );
   });

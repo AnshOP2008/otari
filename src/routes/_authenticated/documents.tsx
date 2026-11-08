@@ -15,6 +15,8 @@ import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 
 import { Button } from "@/components/ui/button";
+import { CalendarSourceLink } from "@/components/calendar-source-link";
+import { sourceHeading } from "@/lib/document-text";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -336,9 +338,10 @@ function DocumentsPage() {
                 className="rounded-md border p-2 text-sm"
               >
                 <summary className="cursor-pointer">
-                  {source.name} · section {source.section}
+                  {sourceHeading(source)}
                 </summary>
                 <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{source.excerpt}</p>
+                <CalendarSourceLink url={source.url} />
               </details>
             ))}
           </div>

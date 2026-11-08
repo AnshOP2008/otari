@@ -13,10 +13,11 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { CalendarSourceLink } from "@/components/calendar-source-link";
 import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import { draftPlan, savePlan } from "@/lib/planner.functions";
 import { listDocuments, loadSourceBrief, searchKnowledge } from "@/lib/documents.functions";
-import { sourceLabel } from "@/lib/document-text";
+import { sourceHeading, sourceLabel } from "@/lib/document-text";
 import { checkCalendarCapacity } from "@/lib/google.functions";
 import { useGoogleOAuth } from "@/hooks/use-google-oauth";
 
@@ -379,17 +380,20 @@ function PlanningDesk() {
                           className="rounded-lg border p-2 text-sm"
                         >
                           <summary className="cursor-pointer">
-                            {sourceLabel(source.name)} · section {source.section}
+                            {sourceHeading(source)}
                           </summary>
                           <p className="my-2 whitespace-pre-wrap">{source.excerpt}</p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => replaceBrief(source.excerpt)}
-                          >
-                            Replace brief with passage
-                          </Button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <CalendarSourceLink url={source.url} />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => replaceBrief(source.excerpt)}
+                            >
+                              Replace brief with passage
+                            </Button>
+                          </div>
                         </details>
                       ))}
                     </div>

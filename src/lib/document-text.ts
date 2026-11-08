@@ -7,6 +7,28 @@ export function sourceLabel(name: string) {
   return name;
 }
 
+export function sourceHeading(source: { name: string; section: number; title?: string | null }) {
+  const label = sourceLabel(source.name);
+  return source.title ? `${source.title} · ${label}` : `${label} · section ${source.section}`;
+}
+
+export function calendarSourceUrl(value?: string | null) {
+  if (!value || value.length > 2048 || !URL.canParse(value)) return null;
+  const url = new URL(value);
+  if (
+    !["https://www.google.com", "https://calendar.google.com"].includes(url.origin) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/calendar/event"
+  ) {
+    return null;
+  }
+  const eid = url.searchParams.get("eid");
+  return eid && /^[A-Za-z0-9_-]+={0,2}$/.test(eid)
+    ? "https://calendar.google.com/calendar/event?eid=" + encodeURIComponent(eid)
+    : null;
+}
+
 export function normalizeText(text: string) {
   return text
     .replace(/\r\n/g, "\n")
