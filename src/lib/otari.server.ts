@@ -3,6 +3,17 @@ import { z } from "zod";
 type Role = "planner" | "reviewer";
 type Tool = "otari_web_search" | "otari_code_execution";
 
+export function checkFreeDemoRoutes(models: string[], requestsTools: boolean) {
+  if (process.env.OTARI_FREE_DEMO !== "true") return;
+  const freeModel = /^openrouter:[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*:free$/;
+  if (models.some((model) => !freeModel.test(model))) {
+    throw new Error("Free demo mode requires explicit OpenRouter model IDs ending in :free.");
+  }
+  if (requestsTools) {
+    throw new Error("Turn off the optional Otari tools for the free demo.");
+  }
+}
+
 const Completion = z.object({
   model: z.string().optional(),
   choices: z
@@ -65,6 +76,7 @@ export async function completeWithOtari(
     throw new Error("Live planning needs configured Otari model IDs.");
   }
   const tools = options.tools ?? [];
+  checkFreeDemoRoutes([model], tools.length > 0);
   let response: Response;
   try {
     response = await fetch(base + "/chat/completions", {

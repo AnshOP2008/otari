@@ -35,7 +35,7 @@ For Docker, export the browser variables before building and supply the server s
 
 ```sh
 docker build --build-arg VITE_SUPABASE_URL --build-arg VITE_SUPABASE_KEY -t taskbase .
-docker run --rm -p 3000:3000 -e SUPABASE_URL -e SUPABASE_PUBLISHABLE_KEY -e OTARI_API_KEY -e OTARI_BASE_URL -e OTARI_PLANNER_MODEL -e OTARI_REVIEWER_MODEL taskbase
+docker run --rm -p 3000:3000 -e SUPABASE_URL -e SUPABASE_PUBLISHABLE_KEY -e OTARI_API_KEY -e OTARI_BASE_URL -e OTARI_PLANNER_MODEL -e OTARI_REVIEWER_MODEL -e OTARI_FREE_DEMO taskbase
 ```
 
 Use the Supabase publishable key for the build argument. Keep Google and Otari secrets in server-side runtime settings. When Supabase runs on the Docker Desktop host, the browser URL can be `http://127.0.0.1:54321` while the container's `SUPABASE_URL` is `http://host.docker.internal:54321`. A build without browser settings still opens the public Planning Desk example.
@@ -56,6 +56,8 @@ In **Planning Desk**, open **Use Calendar availability** to check a work window 
 4. Set a dollar limit on the key or workspace covering all providers. The app checks the budget before generation and stops if the limit is absent or exhausted. Web research and code execution require their workspace tools to be enabled.
 
 Run `node --env-file=.env scripts/check-otari.mjs` before recording. It checks the enforced limit and the configured model IDs against the live catalog without calling a model. If you use a custom routing alias that the catalog does not list, verify it in the dashboard. A spending cap and a catalog entry still require wallet credits or a working provider connection.
+
+For a free-provider demo, connect a dedicated OpenRouter key in Otari under **Organization → Providers → Inference**. Choose two distinct explicit `openrouter:<model>:free` IDs from the current [OpenRouter free catalog](https://openrouter.ai/collections/free-models), check that Otari serves both, and set `OTARI_FREE_DEMO=true`. Keep the Otari spending cap and restrict the key and gateway routing to those free routes. TaskBase rejects other selectors and skips generation when optional tools are selected in free demo mode. Use a synthetic brief for the first live check.
 
 Chat can search all ready sources, one source, or run with retrieval off. It shows the retrieved excerpts associated with cited answers. **Find New Tasks** checks model suggestions against verbatim source evidence and adds only new titles. In Planning Desk, use **Search sources** to find a passage across your notes, inbox snapshot, and Calendar snapshot, then preview it before replacing the brief. You can also load the beginning of a saved source. New Google imports keep each message, conversation, or event in its own searchable passage.
 

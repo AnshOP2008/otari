@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { completeWithOtari, readOtariBudget } from "./otari.server";
+import { checkFreeDemoRoutes, completeWithOtari, readOtariBudget } from "./otari.server";
 
 const Proposal = z.object({
   title: z.string().trim().min(1).max(200),
@@ -62,6 +62,7 @@ export const draftPlan = createServerFn({ method: "POST" })
     if (!plannerModel || !reviewerModel || plannerModel === reviewerModel) {
       throw new Error("Configure distinct Otari model IDs for planning and review.");
     }
+    checkFreeDemoRoutes([plannerModel, reviewerModel], capacityCheck || Boolean(researchTopic));
     const budgetBefore = await readOtariBudget();
     const conversationId = "taskbase-plan-" + crypto.randomUUID();
     const plan = await completeWithOtari(
