@@ -14,7 +14,7 @@ TaskBase turns an event handoff into a source-backed task plan, checks it agains
 | Time | Show on screen |
 | --- | --- |
 | 0:00–0:35 | Open Planning Desk. Explain the organizer's problem using the repair café handoff and its two deadlines. Briefly show the earlier source tag and the Otari integration commit. |
-| 0:35–1:15 | Preview a synthetic Gmail thread and leave the unrelated message unchecked. Search for the briefing in Planning Desk, open the passage, and replace the brief with it. For a broader plan, use the full repair café handoff. |
+| 0:35–1:15 | Preview a synthetic Gmail thread and leave the unrelated message unchecked. In Planning Desk, replace the example with the briefing passage, then add the relevant Calendar passage. Review the editable text and both source labels. Use the repair café handoff if Google approval is pending. |
 | 1:15–2:25 | Set a short planning window and run a live draft. Show the source quote, the deadline it supports, and the reviewer's hold or capacity decision. Enable the optional public research and capacity calculation only after confirming those gateway tools work. |
 | 2:25–3:15 | Save one task and open its evidence on the board. Use **Schedule focus time** to see the estimate in Calendar. Show a conflict and later opening if free/busy is live. Confirm the time before sending, or demonstrate the calendar file if write permission is pending. |
 | 3:15–4:00 | Expand **Otari run details**. Find the displayed session in Otari, or match its request IDs in Requests. Show the two served model IDs, the enforced key budget, and any tool, routing, or policy event you plan to claim. |

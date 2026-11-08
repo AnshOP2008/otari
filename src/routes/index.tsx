@@ -31,6 +31,7 @@ const sampleBrief = [
   "Prepare the volunteer briefing and share the arrival schedule before 2026-11-12.",
   "Design a printed welcome sign if there is time.",
 ].join("\n\n");
+const BRIEF_LIMIT = 8000;
 
 type Draft = Omit<Awaited<ReturnType<typeof draftPlan>>, "budgetBefore" | "conversationId"> & {
   budgetBefore: number | null;
@@ -167,6 +168,21 @@ function PlanningDesk() {
     setError("");
   }
 
+  function addPassage(source: NonNullable<typeof passages.data>[number], replace: boolean) {
+    const passage = `Source · ${sourceHeading(source)}\n${source.excerpt}`;
+    const existing = replace ? "" : brief.trimEnd();
+    const next = existing ? existing + "\n\n" + passage : passage;
+    if (!replace && existing.includes(source.excerpt)) {
+      setError("That passage is already in the brief.");
+      return;
+    }
+    if (next.length > BRIEF_LIMIT) {
+      setError("This passage would exceed the brief limit. Shorten the brief before adding it.");
+      return;
+    }
+    replaceBrief(next);
+  }
+
   async function generate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending || checkingCalendar || !signedIn) return;
@@ -299,9 +315,20 @@ function PlanningDesk() {
                 <h2 className="flex items-center gap-2 text-2xl">
                   <FileText size={19} /> 01 / Brief
                 </h2>
-                <Button type="button" variant="outline" size="sm" onClick={resetSample}>
-                  Load example
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={resetSample}>
+                    Load example
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!brief}
+                    onClick={() => replaceBrief("")}
+                  >
+                    Clear brief
+                  </Button>
+                </div>
               </div>
               {signedIn && readySources.length > 0 && (
                 <div className="space-y-3">
@@ -379,9 +406,7 @@ function PlanningDesk() {
                           key={source.id + ":" + source.section}
                           className="rounded-lg border p-2 text-sm"
                         >
-                          <summary className="cursor-pointer">
-                            {sourceHeading(source)}
-                          </summary>
+                          <summary className="cursor-pointer">{sourceHeading(source)}</summary>
                           <p className="my-2 whitespace-pre-wrap">{source.excerpt}</p>
                           <div className="flex flex-wrap items-center gap-2">
                             <CalendarSourceLink url={source.url} />
@@ -389,15 +414,29 @@ function PlanningDesk() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => replaceBrief(source.excerpt)}
+                              onClick={() => addPassage(source, true)}
                             >
                               Replace brief with passage
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={brief === sampleBrief}
+                              onClick={() => addPassage(source, false)}
+                            >
+                              Add passage to brief
                             </Button>
                           </div>
                         </details>
                       ))}
                     </div>
                   )}
+                  {passages.data?.length && brief === sampleBrief ? (
+                    <p className="text-xs text-[#4f6357]">
+                      Replace or clear the example brief before adding passages.
+                    </p>
+                  ) : null}
                 </div>
               )}
               <div>
@@ -407,9 +446,9 @@ function PlanningDesk() {
                 <textarea
                   id="brief"
                   value={brief}
-                  onChange={(event) => setBrief(event.target.value)}
+                  onChange={(event) => replaceBrief(event.target.value)}
                   minLength={30}
-                  maxLength={8000}
+                  maxLength={BRIEF_LIMIT}
                   required
                   rows={7}
                   className="w-full rounded-xl border border-[#cbd6c7] bg-white p-3 text-sm leading-relaxed"
