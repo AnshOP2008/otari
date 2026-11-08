@@ -14,6 +14,7 @@ import {
   checkCalendarFocusSlot,
   downloadCalendarTask,
   exportCalendarTask,
+  listGmailLabels,
   listGoogleCalendars,
   previewGoogleImport,
   removeIntegrationDoc,
@@ -33,6 +34,10 @@ const scopes = {
   gmail: "https://www.googleapis.com/auth/gmail.readonly",
   export: "https://www.googleapis.com/auth/calendar.events",
 };
+const gmailSystemLabels = [
+  { id: "INBOX", name: "Inbox" },
+  { id: "STARRED", name: "Starred" },
+];
 
 function Integrations() {
   const { user } = Route.useRouteContext();
@@ -48,6 +53,7 @@ function Integrations() {
   const checkAvailability = useServerFn(checkCalendarFocusSlot);
   const downloadTask = useServerFn(downloadCalendarTask);
   const loadCalendars = useServerFn(listGoogleCalendars);
+  const loadLabels = useServerFn(listGmailLabels);
   const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => loadDocs() });
   const { data: tasks = [] } = useQuery({ queryKey: ["tasks"], queryFn: () => loadTasks() });
   const [taskId, setTaskId] = useState(focusTask ?? "");
@@ -81,6 +87,7 @@ function Integrations() {
   const [maxEmails, setMaxEmails] = useState(10);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [gmailQuery, setGmailQuery] = useState("");
+  const [gmailLabelId, setGmailLabelId] = useState("INBOX");
   const [includeThreadContext, setIncludeThreadContext] = useState(false);
   const [selection, setSelection] = useState<string[]>([]);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
@@ -123,13 +130,33 @@ function Integrations() {
     onError: (error) => toast.error(error.message),
   });
 
+  const labels = useMutation({
+    mutationFn: async () => loadLabels({ data: { accessToken: await getToken() } }),
+    onSuccess: (customLabels) => {
+      setGmailLabelId((id) =>
+        [...gmailSystemLabels, ...customLabels].some((label) => label.id === id) ? id : "INBOX",
+      );
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const gmailLabels = [...gmailSystemLabels, ...(labels.data ?? [])];
+
   const preview = useMutation({
     mutationFn: async (service: "calendar" | "gmail") => {
-      const filters = { calendarId, days, maxEmails, unreadOnly, gmailQuery, includeThreadContext };
+      const filters = {
+        calendarId,
+        days,
+        maxEmails,
+        unreadOnly,
+        gmailLabelId,
+        gmailQuery,
+        includeThreadContext,
+      };
+      const gmailLabelName = gmailLabels.find((label) => label.id === gmailLabelId)?.name;
       const entries = await loadPreview({
         data: { ...filters, service, accessToken: await getToken() },
       });
-      return { entries, service, filters };
+      return { entries, service, filters, gmailLabelName };
     },
     onMutate: () => setSelection([]),
     onError: (error) => toast.error(error.message),
@@ -219,6 +246,7 @@ function Integrations() {
   }, [reviewed]);
   const busy =
     calendars.isPending ||
+    labels.isPending ||
     connect.isPending ||
     preview.isPending ||
     sync.isPending ||
@@ -317,8 +345,38 @@ function Integrations() {
           <h2 className="flex items-center gap-2 text-2xl">
             <Mail size={20} /> Gmail import
           </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-sm">
+              Gmail label
+              <select
+                value={gmailLabelId}
+                onChange={(event) => setGmailLabelId(event.target.value)}
+                disabled={busy}
+                className="ml-2 max-w-52 rounded border bg-background p-1"
+              >
+                {gmailLabels.map((label) => (
+                  <option key={label.id} value={label.id}>
+                    {label.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || !googleAvailable}
+              onClick={() => labels.mutate()}
+            >
+              {labels.isPending ? "Loading labels…" : "Load custom labels"}
+            </Button>
+          </div>
+          {labels.data?.length === 0 && (
+            <p className="text-xs text-muted-foreground" role="status">
+              No custom labels found.
+            </p>
+          )}
           <label className="block text-sm">
-            Inbox matches
+            Maximum matches
             <select
               value={maxEmails}
               onChange={(event) => setMaxEmails(Number(event.target.value))}
@@ -372,8 +430,8 @@ function Integrations() {
             </Button>
             <Button disabled={busy || !googleAvailable} onClick={() => preview.mutate("gmail")}>
               {preview.isPending && preview.variables === "gmail"
-                ? "Loading inbox…"
-                : "Preview inbox"}
+                ? "Loading messages…"
+                : "Preview Gmail"}
             </Button>
           </div>
           <Snapshot
@@ -404,6 +462,11 @@ function Integrations() {
           <p className="text-sm text-muted-foreground">
             Choose what TaskBase can search. Confirming replaces the saved snapshot for this source.
           </p>
+          {reviewed.service === "gmail" && reviewed.gmailLabelName && (
+            <p className="text-sm text-muted-foreground">
+              Gmail label · {reviewed.gmailLabelName}
+            </p>
+          )}
           {reviewed.entries.length === 0 ? (
             <p className="text-sm">No results matched. Your saved snapshot is still available.</p>
           ) : (

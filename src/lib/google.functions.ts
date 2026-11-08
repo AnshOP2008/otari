@@ -10,6 +10,8 @@ const gmailFile = "gmail!@#.txt";
 const calendarApi = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const gmailApi = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const gmailThreadApi = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
+const gmailLabelApi = "https://gmail.googleapis.com/gmail/v1/users/me/labels";
+const excludedGmailLabels = new Set(["DRAFT", "DRAFTS", "SPAM", "TRASH"]);
 
 const syncInput = z.object({
   accessToken: z.string().min(1).max(4096),
@@ -17,6 +19,13 @@ const syncInput = z.object({
   days: z.number().int().min(1).max(60).default(14),
   maxEmails: z.number().int().min(1).max(20).default(10),
   unreadOnly: z.boolean().default(false),
+  gmailLabelId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(128)
+    .refine((id) => !excludedGmailLabels.has(id.toUpperCase()), "Choose an importable Gmail label.")
+    .default("INBOX"),
   gmailQuery: z.string().trim().max(160).default(""),
   includeThreadContext: z.boolean().default(false),
 });
@@ -324,6 +333,26 @@ const gmailMessage = z.object({
     .optional(),
 });
 
+export const listGmailLabels = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(z.object({ accessToken: z.string().min(1).max(4096) }))
+  .handler(async ({ data }) => {
+    const response = await googleFetch(
+      gmailLabelApi + "?fields=labels(id,name,type)",
+      data.accessToken,
+    );
+    if (!response.ok) throw googleFailure(response, "Gmail");
+    const schema = z.object({
+      labels: z.array(z.object({ id: z.string(), name: z.string(), type: z.string() })).default([]),
+    });
+    return schema
+      .parse(await response.json())
+      .labels
+      .filter(({ id, type }) => type === "user" && !excludedGmailLabels.has(id.toUpperCase()))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(({ id, name }) => ({ id, name }));
+  });
+
 function describeGmailMessage(message: z.infer<typeof gmailMessage>) {
   const headers = new Map(
     message.payload?.headers.map(({ name, value }) => [name.toLowerCase(), value.slice(0, 300)]),
@@ -337,12 +366,13 @@ async function readGmail({
   accessToken,
   maxEmails,
   unreadOnly,
+  gmailLabelId,
   gmailQuery,
   includeThreadContext,
 }: SyncInput): Promise<ImportEntry[]> {
   const params = new URLSearchParams({ maxResults: String(maxEmails) });
-  params.append("labelIds", "INBOX");
-  if (unreadOnly) params.append("labelIds", "UNREAD");
+  params.append("labelIds", gmailLabelId);
+  if (unreadOnly && gmailLabelId !== "UNREAD") params.append("labelIds", "UNREAD");
   if (gmailQuery) params.set("q", gmailQuery);
   const response = await googleFetch(gmailApi + "?" + params, accessToken);
   if (!response.ok) throw googleFailure(response, "Gmail");
@@ -363,7 +393,7 @@ async function readGmail({
       if (!response.ok) throw googleFailure(response, "Gmail");
       const { messages: replies } = z.object({ messages: z.array(gmailMessage).default([]) }).parse(await response.json());
       const recent = replies
-        .filter((message) => !message.labelIds.some((label) => ["DRAFT", "SPAM", "TRASH"].includes(label)))
+        .filter((message) => !message.labelIds.some((label) => excludedGmailLabels.has(label)))
         .sort((a, b) => Number(a.internalDate ?? 0) - Number(b.internalDate ?? 0))
         .slice(-3)
         .map(describeGmailMessage);
@@ -379,12 +409,14 @@ async function readGmail({
       gmailApi +
         "/" +
         encodeURIComponent(id) +
-        "?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date",
+        "?format=full&fields=labelIds,snippet,payload(headers)",
       accessToken,
     );
     if (message.status === 404) continue;
     if (!message.ok) throw googleFailure(message, "Gmail");
-    entries.push({ id, ...describeGmailMessage(gmailMessage.parse(await message.json())) });
+    const parsed = gmailMessage.parse(await message.json());
+    if (parsed.labelIds.some((label) => excludedGmailLabels.has(label))) continue;
+    entries.push({ id, ...describeGmailMessage(parsed) });
   }
   return entries;
 }
@@ -400,11 +432,13 @@ async function importCalendar(db: Db, data: z.infer<typeof importInput>) {
 }
 
 async function importGmail(db: Db, data: z.infer<typeof importInput>) {
+  const label =
+    data.gmailLabelId === "INBOX" ? "Inbox" : data.gmailLabelId === "STARRED" ? "Starred" : "Selected label";
   return storeSnapshot(
     db,
     gmailFile,
     await readGmail(data),
-    data.unreadOnly ? "Gmail · Unread inbox" : "Gmail · Inbox",
+    "Gmail · " + label + (data.unreadOnly ? " · Unread only" : ""),
     data.selection,
   );
 }
