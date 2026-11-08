@@ -76,6 +76,7 @@ function Integrations() {
   const [maxEmails, setMaxEmails] = useState(10);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [gmailQuery, setGmailQuery] = useState("");
+  const [includeThreadContext, setIncludeThreadContext] = useState(false);
   const [selection, setSelection] = useState<string[]>([]);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
   const { googleAvailable } = useGoogleOAuth();
@@ -113,7 +114,7 @@ function Integrations() {
 
   const preview = useMutation({
     mutationFn: async (service: "calendar" | "gmail") => {
-      const filters = { calendarId, days, maxEmails, unreadOnly, gmailQuery };
+      const filters = { calendarId, days, maxEmails, unreadOnly, gmailQuery, includeThreadContext };
       const entries = await loadPreview({
         data: { ...filters, service, accessToken: await getToken() },
       });
@@ -286,7 +287,7 @@ function Integrations() {
             <Mail size={20} /> Gmail import
           </h2>
           <label className="block text-sm">
-            Inbox messages
+            Inbox matches
             <select
               value={maxEmails}
               onChange={(event) => setMaxEmails(Number(event.target.value))}
@@ -307,6 +308,16 @@ function Integrations() {
             />{" "}
             Unread only
           </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={includeThreadContext} disabled={busy}
+              onChange={(event) => setIncludeThreadContext(event.target.checked)} />
+            Include recent replies
+          </label>
+          {includeThreadContext && (
+            <p className="text-xs text-muted-foreground">
+              Preview up to three recent messages per matching conversation, including sent or archived replies.
+            </p>
+          )}
           <label className="block text-sm">
             Gmail search filter (optional)
             <input
@@ -356,7 +367,8 @@ function Integrations() {
       {reviewed && (
         <section className="card-soft mt-6 space-y-4 p-5" aria-labelledby="import-review">
           <h2 id="import-review" className="text-xl" ref={reviewHeading} tabIndex={-1}>
-            Review {reviewed.service === "calendar" ? "Calendar events" : "Gmail messages"}
+            Review {reviewed.service === "calendar" ? "Calendar events"
+              : reviewed.filters.includeThreadContext ? "Gmail conversations" : "Gmail messages"}
           </h2>
           <p className="text-sm text-muted-foreground">
             Choose what TaskBase can search. Confirming replaces the saved snapshot for this source.

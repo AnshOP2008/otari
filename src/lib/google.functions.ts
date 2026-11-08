@@ -9,6 +9,7 @@ const calendarFile = "calendar!@#.txt";
 const gmailFile = "gmail!@#.txt";
 const calendarApi = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const gmailApi = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
+const gmailThreadApi = "https://gmail.googleapis.com/gmail/v1/users/me/threads";
 
 const syncInput = z.object({
   accessToken: z.string().min(1).max(4096),
@@ -17,6 +18,7 @@ const syncInput = z.object({
   maxEmails: z.number().int().min(1).max(20).default(10),
   unreadOnly: z.boolean().default(false),
   gmailQuery: z.string().trim().max(160).default(""),
+  includeThreadContext: z.boolean().default(false),
 });
 type SyncInput = z.infer<typeof syncInput>;
 type Db = SupabaseClient<Database>;
@@ -275,19 +277,33 @@ async function readCalendar({ accessToken, days, calendarId }: SyncInput): Promi
     });
 }
 
-const gmailList = z.object({ messages: z.array(z.object({ id: z.string() })).default([]) });
+const gmailList = z.object({
+  messages: z.array(z.object({ id: z.string(), threadId: z.string().optional() })).default([]),
+});
 const gmailMessage = z.object({
   snippet: z.string().default(""),
+  internalDate: z.string().optional(),
+  labelIds: z.array(z.string()).default([]),
   payload: z
     .object({ headers: z.array(z.object({ name: z.string(), value: z.string() })).default([]) })
     .optional(),
 });
+
+function describeGmailMessage(message: z.infer<typeof gmailMessage>) {
+  const headers = new Map(
+    message.payload?.headers.map(({ name, value }) => [name.toLowerCase(), value.slice(0, 300)]),
+  );
+  const title = headers.get("subject") || "No subject";
+  const text = `Subject: ${title}\nFrom: ${headers.get("from") || "Unknown"}\nDate: ${headers.get("date") || "Unknown"}\n${message.snippet.slice(0, 700)}`;
+  return { title, text };
+}
 
 async function readGmail({
   accessToken,
   maxEmails,
   unreadOnly,
   gmailQuery,
+  includeThreadContext,
 }: SyncInput): Promise<ImportEntry[]> {
   const params = new URLSearchParams({ maxResults: String(maxEmails) });
   params.append("labelIds", "INBOX");
@@ -297,7 +313,33 @@ async function readGmail({
   if (!response.ok) throw googleFailure(response, "Gmail");
   const { messages } = gmailList.parse(await response.json());
   const entries: ImportEntry[] = [];
-  for (const { id } of messages) {
+  const seenThreads = new Set<string>();
+  for (const { id, threadId } of messages) {
+    if (includeThreadContext && threadId) {
+      if (seenThreads.has(threadId)) continue;
+      seenThreads.add(threadId);
+      // Request snippets and headers only. The projection excludes message bodies and attachments.
+      const query = new URLSearchParams({
+        format: "full",
+        fields: "messages(internalDate,labelIds,snippet,payload(headers))",
+      });
+      const response = await googleFetch(gmailThreadApi + "/" + encodeURIComponent(threadId) + "?" + query, accessToken);
+      if (response.status === 404) continue;
+      if (!response.ok) throw googleFailure(response, "Gmail");
+      const { messages: replies } = z.object({ messages: z.array(gmailMessage).default([]) }).parse(await response.json());
+      const recent = replies
+        .filter((message) => !message.labelIds.some((label) => ["DRAFT", "SPAM", "TRASH"].includes(label)))
+        .sort((a, b) => Number(a.internalDate ?? 0) - Number(b.internalDate ?? 0))
+        .slice(-3)
+        .map(describeGmailMessage);
+      const latest = recent.at(-1);
+      if (latest) entries.push({
+        id: "thread:" + threadId,
+        title: latest.title,
+        text: "Gmail conversation · oldest to newest\n\n" + recent.map((reply) => reply.text).join("\n\n"),
+      });
+      continue;
+    }
     const message = await googleFetch(
       gmailApi +
         "/" +
@@ -307,13 +349,7 @@ async function readGmail({
     );
     if (message.status === 404) continue;
     if (!message.ok) throw googleFailure(message, "Gmail");
-    const { payload, snippet } = gmailMessage.parse(await message.json());
-    const headers = new Map(
-      payload?.headers.map(({ name, value }) => [name.toLowerCase(), value.slice(0, 300)]),
-    );
-    const title = headers.get("subject") || "No subject";
-    const text = `Subject: ${title}\nFrom: ${headers.get("from") || "Unknown"}\nDate: ${headers.get("date") || "Unknown"}\n${snippet.slice(0, 700)}`;
-    entries.push({ id, title, text });
+    entries.push({ id, ...describeGmailMessage(gmailMessage.parse(await message.json())) });
   }
   return entries;
 }
