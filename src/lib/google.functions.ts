@@ -607,6 +607,21 @@ export const downloadCalendarTask = createServerFn({ method: "GET" })
       .join("\r\n");
   });
 
+async function calendarWriteReceipt(db: Db, taskId: string, response: Response, updated: boolean) {
+  const exportedAt = new Date().toISOString();
+  const event = z
+    .object({ htmlLink: z.string().optional() })
+    .safeParse(await response.json().catch(() => null));
+  const url = event.success ? calendarSourceUrl(event.data.htmlLink) : null;
+  const { data, error } = await db
+    .from("tasks")
+    .update({ calendar_exported_at: exportedAt, calendar_event_url: url })
+    .eq("id", taskId)
+    .select("id")
+    .maybeSingle();
+  return { updated, url, exportedAt, receiptSaved: Boolean(data && !error) };
+}
+
 export const exportCalendarTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator(
@@ -645,7 +660,7 @@ export const exportCalendarTask = createServerFn({ method: "POST" })
       headers,
       body: patch,
     });
-    if (update.ok) return { updated: true };
+    if (update.ok) return calendarWriteReceipt(context.supabase, task.id, update, true);
     if (update.status !== 404) throw googleFailure(update, "Google Calendar");
     // Older TaskBase versions let Google assign the event ID. Reuse that event if present.
     const legacyParams = new URLSearchParams({
@@ -666,7 +681,7 @@ export const exportCalendarTask = createServerFn({ method: "POST" })
         },
       );
       if (!replace.ok) throw googleFailure(replace, "Google Calendar");
-      return { updated: true };
+      return calendarWriteReceipt(context.supabase, task.id, replace, true);
     }
     const insert = await googleFetch(calendarApi, data.accessToken, {
       method: "POST",
@@ -680,8 +695,8 @@ export const exportCalendarTask = createServerFn({ method: "POST" })
         body: patch,
       });
       if (!retry.ok) throw googleFailure(retry, "Google Calendar");
-      return { updated: true };
+      return calendarWriteReceipt(context.supabase, task.id, retry, true);
     }
     if (!insert.ok) throw googleFailure(insert, "Google Calendar");
-    return { updated: false };
+    return calendarWriteReceipt(context.supabase, task.id, insert, false);
   });

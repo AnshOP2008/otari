@@ -4,6 +4,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Pencil, Trash2, Calendar, Clock, Sparkles, ChevronDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CalendarSourceLink } from "@/components/calendar-source-link";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
@@ -18,6 +19,8 @@ export type Task = {
   position: number;
   due_date: string | null;
   estimate_minutes: number | null;
+  calendar_event_url: string | null;
+  calendar_exported_at: string | null;
   created_by: "user" | "ai";
   ai_reason: string | null;
   created_at?: string;
@@ -174,6 +177,17 @@ export function TaskCard({
               </span>
             ))}
           </div>
+          {task.calendar_exported_at && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+              <span>
+                Last sent to Calendar{" "}
+                <time dateTime={task.calendar_exported_at}>
+                  {format(parseISO(task.calendar_exported_at), "MMM d, h:mm a")}
+                </time>
+              </span>
+              <CalendarSourceLink url={task.calendar_event_url} />
+            </div>
+          )}
           {task.status === "todo" && !pastMode && (
             <Link
               to="/permissions"
@@ -203,7 +217,7 @@ export function TaskCard({
                     <div>AI generated {format(parseISO(task.created_at), "MMM d, h:mm a")}</div>
                   )}
                   {task.updated_at && task.updated_at !== task.created_at && (
-                    <div>Last refined {format(parseISO(task.updated_at), "MMM d, h:mm a")}</div>
+                    <div>Last updated {format(parseISO(task.updated_at), "MMM d, h:mm a")}</div>
                   )}
                 </div>
               )}

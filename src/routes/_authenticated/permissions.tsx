@@ -221,11 +221,16 @@ function Integrations() {
   const publish = useMutation({
     mutationFn: async (input: typeof calendarInput & { requireFreeSlot: boolean }) =>
       exportTask({ data: { ...input, accessToken: await getToken() } }),
-    onSuccess: ({ updated }) =>
-      toast.success(updated ? "Updated your Calendar event." : "Created your Calendar event."),
+    onSuccess: ({ updated, receiptSaved }) => {
+      if (receiptSaved) void qc.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success(updated ? "Updated your Calendar event." : "Created your Calendar event.");
+    },
     onError: (error) => toast.error(error.message),
     onSettled: () => availability.reset(),
   });
+  const latestReceipt = publish.variables?.taskId === selectedTask?.id ? publish.data : undefined;
+  const lastSent = latestReceipt?.exportedAt ?? selectedTask?.calendar_exported_at;
+  const eventUrl = latestReceipt ? latestReceipt.url : selectedTask?.calendar_event_url;
 
   const download = useMutation({
     mutationFn: async ({ input, key }: { input: typeof calendarInput; key: string }) => {
@@ -671,6 +676,20 @@ function Integrations() {
               >
                 Use {alternativeStart.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
               </Button>
+            )}
+          </div>
+        )}
+        {lastSent && (
+          <div className="rounded-lg border border-border p-3 text-sm" role="status">
+            <p>
+              Last sent to Calendar{" "}
+              <time dateTime={lastSent}>{new Date(lastSent).toLocaleString()}</time>
+            </p>
+            <CalendarSourceLink url={eventUrl} />
+            {latestReceipt && !latestReceipt.receiptSaved && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Google saved the event. TaskBase could not keep this receipt on the board.
+              </p>
             )}
           </div>
         )}

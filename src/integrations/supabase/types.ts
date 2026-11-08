@@ -134,6 +134,8 @@ export type Database = {
       tasks: {
         Row: {
           ai_reason: string | null;
+          calendar_event_url: string | null;
+          calendar_exported_at: string | null;
           created_at: string;
           created_by: Database["public"]["Enums"]["task_origin"];
           description: string;
@@ -150,6 +152,8 @@ export type Database = {
         };
         Insert: {
           ai_reason?: string | null;
+          calendar_event_url?: string | null;
+          calendar_exported_at?: string | null;
           created_at?: string;
           created_by?: Database["public"]["Enums"]["task_origin"];
           description?: string;
@@ -166,6 +170,8 @@ export type Database = {
         };
         Update: {
           ai_reason?: string | null;
+          calendar_event_url?: string | null;
+          calendar_exported_at?: string | null;
           created_at?: string;
           created_by?: Database["public"]["Enums"]["task_origin"];
           description?: string;
