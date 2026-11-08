@@ -367,8 +367,8 @@ function PlanningDesk() {
                             type="datetime-local"
                             value={windowStart}
                             disabled={checkingCalendar}
-                            onChange={(event) => {
-                              setWindowStart(event.target.value);
+                            onInput={(event) => {
+                              setWindowStart(event.currentTarget.value);
                               clearCalendarResult();
                             }}
                             className="block w-full rounded-lg border border-[#cbd6c7] bg-white p-2"
@@ -380,8 +380,8 @@ function PlanningDesk() {
                             type="datetime-local"
                             value={windowEnd}
                             disabled={checkingCalendar}
-                            onChange={(event) => {
-                              setWindowEnd(event.target.value);
+                            onInput={(event) => {
+                              setWindowEnd(event.currentTarget.value);
                               clearCalendarResult();
                             }}
                             className="block w-full rounded-lg border border-[#cbd6c7] bg-white p-2"

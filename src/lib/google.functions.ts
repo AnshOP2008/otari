@@ -416,33 +416,67 @@ function foldCalendarLine(line: string) {
   return [...folded, part].join("\r\n");
 }
 
+const calendarTaskInput = z.object({
+  taskId: z.string().uuid(),
+  includeDescription: z.boolean().default(true),
+  slot: z
+    .object({
+      start: z.iso.datetime({ offset: true }),
+      end: z.iso.datetime({ offset: true }),
+    })
+    .refine(({ start, end }) => {
+      const duration = Date.parse(end) - Date.parse(start);
+      return duration >= 60_000 && duration <= 86_400_000;
+    }, "Choose a timed block from 1 minute to 24 hours.")
+    .optional(),
+});
+
+async function readCalendarTask(db: Db, data: z.infer<typeof calendarTaskInput>) {
+  const { data: task, error } = await db
+    .from("tasks")
+    .select("id,title,description,due_date,status")
+    .eq("id", data.taskId)
+    .maybeSingle();
+  if (error) throw new Error("Could not read the selected task.");
+  if (!task || task.status === "done") throw new Error("Choose an open task.");
+  const description = data.includeDescription ? task.description : "";
+  if (data.slot) {
+    return {
+      task,
+      description,
+      timed: true,
+      start: new Date(data.slot.start).toISOString(),
+      end: new Date(data.slot.end).toISOString(),
+    };
+  }
+  if (!task.due_date) throw new Error("Choose a due date or add a timed block.");
+  return {
+    task,
+    description,
+    timed: false,
+    start: task.due_date,
+    end: nextCalendarDate(task.due_date),
+  };
+}
+
 export const downloadCalendarTask = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .validator(z.object({ taskId: z.string().uuid() }))
+  .validator(calendarTaskInput)
   .handler(async ({ context, data }) => {
-    const { data: task, error } = await context.supabase
-      .from("tasks")
-      .select("id,title,description,due_date,status")
-      .eq("id", data.taskId)
-      .maybeSingle();
-    if (error || !task?.due_date || task.status === "done") {
-      throw new Error("Choose an open task with a due date.");
-    }
-    const compact = (date: string) => date.replaceAll("-", "");
+    const { task, description, timed, start, end } = await readCalendarTask(context.supabase, data);
+    const compact = (date: string) => date.replace(/[-:]|\.\d{3}/g, "");
+    const dateParameter = timed ? ":" : ";VALUE=DATE:";
     return [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       "PRODID:-//TaskBase//Calendar Export//EN",
       "BEGIN:VEVENT",
       "UID:" + task.id + "@taskbase",
-      "DTSTAMP:" +
-        compact(new Date().toISOString())
-          .replaceAll(":", "")
-          .replace(/\.\d{3}/, ""),
-      "DTSTART;VALUE=DATE:" + compact(task.due_date),
-      "DTEND;VALUE=DATE:" + compact(nextCalendarDate(task.due_date)),
+      "DTSTAMP:" + compact(new Date().toISOString()),
+      "DTSTART" + dateParameter + compact(start),
+      "DTEND" + dateParameter + compact(end),
       "SUMMARY:" + calendarText(task.title),
-      "DESCRIPTION:" + calendarText(task.description),
+      "DESCRIPTION:" + calendarText(description),
       "END:VEVENT",
       "END:VCALENDAR",
       "",
@@ -453,28 +487,29 @@ export const downloadCalendarTask = createServerFn({ method: "GET" })
 
 export const exportCalendarTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(z.object({ accessToken: z.string().min(1).max(4096), taskId: z.string().uuid() }))
+  .validator(calendarTaskInput.extend({ accessToken: z.string().min(1).max(4096) }))
   .handler(async ({ context, data }) => {
-    const { data: task, error } = await context.supabase
-      .from("tasks")
-      .select("id,title,description,due_date,status")
-      .eq("id", data.taskId)
-      .maybeSingle();
-    if (error || !task?.due_date || task.status === "done")
-      throw new Error("Choose an open task with a due date.");
+    const { task, description, timed, start, end } = await readCalendarTask(context.supabase, data);
     const id = "tb" + task.id.replaceAll("-", "");
     const event = {
       summary: task.title,
-      description: task.description,
-      start: { date: task.due_date },
-      end: { date: nextCalendarDate(task.due_date) },
+      description,
+      start: timed ? { dateTime: start } : { date: start },
+      end: timed ? { dateTime: end } : { date: end },
       extendedProperties: { private: { productivity_companion: "true", task_id: task.id } },
     };
     const headers = { "Content-Type": "application/json" };
+    // Calendar patches merge nested fields, so clear the alternate form when switching modes.
+    const cleared = timed ? { date: null } : { dateTime: null, timeZone: null };
+    const patch = JSON.stringify({
+      ...event,
+      start: { ...event.start, ...cleared },
+      end: { ...event.end, ...cleared },
+    });
     const update = await googleFetch(calendarApi + "/" + id, data.accessToken, {
       method: "PATCH",
       headers,
-      body: JSON.stringify(event),
+      body: patch,
     });
     if (update.ok) return { updated: true };
     if (update.status !== 404) throw googleFailure(update, "Google Calendar");
@@ -493,7 +528,7 @@ export const exportCalendarTask = createServerFn({ method: "POST" })
         {
           method: "PATCH",
           headers,
-          body: JSON.stringify(event),
+          body: patch,
         },
       );
       if (!replace.ok) throw googleFailure(replace, "Google Calendar");
@@ -508,7 +543,7 @@ export const exportCalendarTask = createServerFn({ method: "POST" })
       const retry = await googleFetch(calendarApi + "/" + id, data.accessToken, {
         method: "PATCH",
         headers,
-        body: JSON.stringify(event),
+        body: patch,
       });
       if (!retry.ok) throw googleFailure(retry, "Google Calendar");
       return { updated: true };

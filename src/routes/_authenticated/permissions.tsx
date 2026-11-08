@@ -45,9 +45,29 @@ function Integrations() {
   const loadCalendars = useServerFn(listGoogleCalendars);
   const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => loadDocs() });
   const { data: tasks = [] } = useQuery({ queryKey: ["tasks"], queryFn: () => loadTasks() });
-  const eligible = tasks.filter((task) => task.due_date && task.status !== "done");
   const [taskId, setTaskId] = useState("");
-  const [calendarFile, setCalendarFile] = useState<{ taskId: string; url: string } | null>(null);
+  const [timed, setTimed] = useState(false);
+  const [blockStart, setBlockStart] = useState("");
+  const [blockMinutes, setBlockMinutes] = useState(45);
+  const [includeDescription, setIncludeDescription] = useState(false);
+  const [calendarFile, setCalendarFile] = useState<{ key: string; url: string } | null>(null);
+  const eligible = tasks.filter((task) => task.status !== "done" && (timed || task.due_date));
+  const selectedTask = eligible.find((task) => task.id === taskId);
+  const start = new Date(blockStart);
+  const slot =
+    timed &&
+    Number.isFinite(start.getTime()) &&
+    Number.isInteger(blockMinutes) &&
+    blockMinutes >= 1 &&
+    blockMinutes <= 1440
+      ? {
+          start: start.toISOString(),
+          end: new Date(start.getTime() + blockMinutes * 60_000).toISOString(),
+        }
+      : undefined;
+  const calendarInput = { taskId, includeDescription, slot };
+  const canExport = Boolean(selectedTask && (!timed || slot));
+  const calendarKey = JSON.stringify([calendarInput, selectedTask?.updated_at]);
   const [days, setDays] = useState(14);
   const [calendarId, setCalendarId] = useState("primary");
   const [maxEmails, setMaxEmails] = useState(10);
@@ -127,17 +147,18 @@ function Integrations() {
   });
 
   const publish = useMutation({
-    mutationFn: async () => exportTask({ data: { accessToken: await getToken(), taskId } }),
+    mutationFn: async (input: typeof calendarInput) =>
+      exportTask({ data: { ...input, accessToken: await getToken() } }),
     onSuccess: ({ updated }) =>
       toast.success(updated ? "Updated your Calendar event." : "Created your Calendar event."),
     onError: (error) => toast.error(error.message),
   });
 
   const download = useMutation({
-    mutationFn: async () => {
-      const text = await downloadTask({ data: { taskId } });
+    mutationFn: async ({ input, key }: { input: typeof calendarInput; key: string }) => {
+      const text = await downloadTask({ data: input });
       const url = URL.createObjectURL(new Blob([text], { type: "text/calendar;charset=utf-8" }));
-      setCalendarFile({ taskId, url });
+      setCalendarFile({ key, url });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -147,7 +168,6 @@ function Integrations() {
     };
   }, [calendarFile]);
 
-  const hasTask = eligible.some((task) => task.id === taskId);
   const reviewed = preview.data;
   useEffect(() => {
     if (reviewed) reviewHeading.current?.focus();
@@ -395,23 +415,90 @@ function Integrations() {
       <section className="card-soft mt-6 space-y-4 p-5">
         <h2 className="text-2xl">Send one task to Calendar</h2>
         <p className="text-sm text-muted-foreground">
-          Creates an all-day event on the due date. Sending the same task again updates its event.
+          Choose an all-day due date or schedule time to work. Sending the same task again updates
+          its event on your primary Calendar.
         </p>
+        <label className="block text-sm">
+          Event type
+          <select
+            value={timed ? "timed" : "all-day"}
+            onChange={(event) => setTimed(event.target.value === "timed")}
+            disabled={busy}
+            className="ml-2 rounded border bg-background p-1"
+          >
+            <option value="all-day">All-day due date</option>
+            <option value="timed">Timed focus block</option>
+          </select>
+        </label>
         <label className="block text-sm">
           Task
           <select
-            value={taskId}
+            value={selectedTask?.id ?? ""}
             onChange={(event) => setTaskId(event.target.value)}
+            disabled={busy}
             className="ml-2 max-w-full rounded border bg-background p-1"
           >
-            <option value="">Choose a dated open task</option>
+            <option value="">{timed ? "Choose an open task" : "Choose a dated open task"}</option>
             {eligible.map((task) => (
               <option key={task.id} value={task.id}>
-                {task.title} · {task.due_date}
+                {task.title}
+                {task.due_date ? " · " + task.due_date : ""}
               </option>
             ))}
           </select>
         </label>
+        {timed && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm">
+              Start (device time)
+              <input
+                type="datetime-local"
+                value={blockStart}
+                onInput={(event) => setBlockStart(event.currentTarget.value)}
+                disabled={busy}
+                className="mt-1 block w-full rounded border bg-background p-2"
+              />
+            </label>
+            <label className="text-sm">
+              Duration in minutes
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                step={1}
+                value={Number.isNaN(blockMinutes) ? "" : blockMinutes}
+                onChange={(event) => setBlockMinutes(event.target.valueAsNumber)}
+                disabled={busy}
+                className="mt-1 block w-full rounded border bg-background p-2"
+              />
+            </label>
+          </div>
+        )}
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={includeDescription}
+            disabled={busy}
+            onChange={(event) => setIncludeDescription(event.target.checked)}
+          />
+          Include task notes
+        </label>
+        {canExport && selectedTask && (
+          <div
+            className="rounded-lg border border-border p-3 text-sm"
+            aria-label="Calendar event preview"
+          >
+            <p className="font-medium">{selectedTask.title}</p>
+            <p className="mt-1 text-muted-foreground">
+              {slot
+                ? `${new Date(slot.start).toLocaleString()} to ${new Date(slot.end).toLocaleString()} (device time)`
+                : `All day on ${selectedTask.due_date}`}
+            </p>
+            {includeDescription && selectedTask.description && (
+              <p className="mt-2 whitespace-pre-wrap break-words">{selectedTask.description}</p>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
@@ -420,13 +507,20 @@ function Integrations() {
           >
             Allow Calendar write
           </Button>
-          <Button disabled={busy || !googleAvailable || !hasTask} onClick={() => publish.mutate()}>
+          <Button
+            disabled={busy || !googleAvailable || !canExport}
+            onClick={() => publish.mutate(calendarInput)}
+          >
             Send selected task
           </Button>
-          <Button variant="outline" disabled={busy || !hasTask} onClick={() => download.mutate()}>
+          <Button
+            variant="outline"
+            disabled={busy || !canExport}
+            onClick={() => download.mutate({ input: calendarInput, key: calendarKey })}
+          >
             Prepare calendar file
           </Button>
-          {hasTask && calendarFile?.taskId === taskId && (
+          {canExport && calendarFile?.key === calendarKey && (
             <Button variant="outline" asChild>
               <a href={calendarFile.url} download="taskbase-task.ics">
                 Download calendar file
