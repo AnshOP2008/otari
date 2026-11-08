@@ -44,6 +44,8 @@ In **Integrations**, grant Calendar read access for event imports and Gmail read
 
 For an outbound action, select **All-day due date** or **Timed focus block**. A focus block can use any open task and leaves the task's due date intact. Review the event time and choose whether to include task notes. **Send selected task** writes to your primary Calendar after you grant write access. Sending the same task again updates its event. **Prepare calendar file** makes the same event available as an .ics download without Google OAuth.
 
+For a focus block, use **Check this time** after granting free/busy access. If the block looks free, TaskBase checks again immediately before writing it. If Calendar reports a conflict, choose another time or explicitly send despite the conflict. The check includes any existing copy of this task's event.
+
 In **Planning Desk**, open **Use Calendar availability** to check a work window on your primary calendar. Grant **Allow free/busy access** in Integrations if you only need availability. Planning Desk shows total free time and the longest uninterrupted block. If you apply the result, the reviewer receives those two durations and the app flags tasks that need to be split or deferred. Event details and timestamps are excluded from that AI request.
 
 ## Enable Otari

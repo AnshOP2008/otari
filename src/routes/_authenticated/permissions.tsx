@@ -10,6 +10,7 @@ import { listDocuments } from "@/lib/documents.functions";
 import { listTasks } from "@/lib/tasks.functions";
 import { useGoogleOAuth } from "@/hooks/use-google-oauth";
 import {
+  checkCalendarCapacity,
   downloadCalendarTask,
   exportCalendarTask,
   listGoogleCalendars,
@@ -41,6 +42,7 @@ function Integrations() {
   const loadPreview = useServerFn(previewGoogleImport);
   const remove = useServerFn(removeIntegrationDoc);
   const exportTask = useServerFn(exportCalendarTask);
+  const checkAvailability = useServerFn(checkCalendarCapacity);
   const downloadTask = useServerFn(downloadCalendarTask);
   const loadCalendars = useServerFn(listGoogleCalendars);
   const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => loadDocs() });
@@ -68,6 +70,7 @@ function Integrations() {
   const calendarInput = { taskId, includeDescription, slot };
   const canExport = Boolean(selectedTask && (!timed || slot));
   const calendarKey = JSON.stringify([calendarInput, selectedTask?.updated_at]);
+  const slotKey = slot ? slot.start + "/" + slot.end : null;
   const [days, setDays] = useState(14);
   const [calendarId, setCalendarId] = useState("primary");
   const [maxEmails, setMaxEmails] = useState(10);
@@ -146,12 +149,22 @@ function Integrations() {
     onError: (error) => toast.error(error.message),
   });
 
+  const availability = useMutation({
+    mutationFn: async (window: NonNullable<typeof slot>) =>
+      checkAvailability({ data: { ...window, accessToken: await getToken() } }),
+    onError: (error) => toast.error(error.message),
+  });
+  const checkedWindow = availability.variables;
+  const checkedSlotKey = checkedWindow ? checkedWindow.start + "/" + checkedWindow.end : null;
+  const slotAvailability = slotKey === checkedSlotKey ? availability.data : undefined;
+
   const publish = useMutation({
-    mutationFn: async (input: typeof calendarInput) =>
+    mutationFn: async (input: typeof calendarInput & { requireFreeSlot: boolean }) =>
       exportTask({ data: { ...input, accessToken: await getToken() } }),
     onSuccess: ({ updated }) =>
       toast.success(updated ? "Updated your Calendar event." : "Created your Calendar event."),
     onError: (error) => toast.error(error.message),
+    onSettled: () => availability.reset(),
   });
 
   const download = useMutation({
@@ -178,6 +191,7 @@ function Integrations() {
     preview.isPending ||
     sync.isPending ||
     forget.isPending ||
+    availability.isPending ||
     publish.isPending ||
     download.isPending;
   return (
@@ -422,7 +436,10 @@ function Integrations() {
           Event type
           <select
             value={timed ? "timed" : "all-day"}
-            onChange={(event) => setTimed(event.target.value === "timed")}
+            onChange={(event) => {
+              setTimed(event.target.value === "timed");
+              availability.reset();
+            }}
             disabled={busy}
             className="ml-2 rounded border bg-background p-1"
           >
@@ -454,7 +471,10 @@ function Integrations() {
               <input
                 type="datetime-local"
                 value={blockStart}
-                onInput={(event) => setBlockStart(event.currentTarget.value)}
+                onInput={(event) => {
+                  setBlockStart(event.currentTarget.value);
+                  availability.reset();
+                }}
                 disabled={busy}
                 className="mt-1 block w-full rounded border bg-background p-2"
               />
@@ -467,7 +487,10 @@ function Integrations() {
                 max={1440}
                 step={1}
                 value={Number.isNaN(blockMinutes) ? "" : blockMinutes}
-                onChange={(event) => setBlockMinutes(event.target.valueAsNumber)}
+                onChange={(event) => {
+                  setBlockMinutes(event.target.valueAsNumber);
+                  availability.reset();
+                }}
                 disabled={busy}
                 className="mt-1 block w-full rounded border bg-background p-2"
               />
@@ -499,6 +522,25 @@ function Integrations() {
             )}
           </div>
         )}
+        {slot && canExport && (
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || !googleAvailable}
+              onClick={() => availability.mutate(slot)}
+            >
+              {availability.isPending ? "Checking Calendar…" : "Check this time"}
+            </Button>
+            {slotAvailability && (
+              <p role="status" className="text-sm text-muted-foreground">
+                {slotAvailability.isFree
+                  ? "This time was free when checked. TaskBase will check again before sending."
+                  : "This time overlaps an event on your primary Calendar. Choose another time or send despite the conflict."}
+              </p>
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
@@ -509,9 +551,14 @@ function Integrations() {
           </Button>
           <Button
             disabled={busy || !googleAvailable || !canExport}
-            onClick={() => publish.mutate(calendarInput)}
+            onClick={() =>
+              publish.mutate({
+                ...calendarInput,
+                requireFreeSlot: slotAvailability?.isFree === true,
+              })
+            }
           >
-            Send selected task
+            {slotAvailability?.isFree === false ? "Send despite conflict" : "Send selected task"}
           </Button>
           <Button
             variant="outline"

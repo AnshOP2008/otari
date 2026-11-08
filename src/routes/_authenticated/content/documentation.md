@@ -21,3 +21,5 @@ You can also select **Find New Tasks** on the board to append supported tasks fr
 In **Integrations**, grant Calendar or Gmail read access for the import you need. Select a calendar and date range for events. For Gmail, choose an inbox count, unread filter, or a search expression. Preview the matches, inspect the captured text, and select the entries you want to save. Confirming replaces that source's saved snapshot in your knowledge base.
 
 To send a task to Google Calendar, choose **All-day due date** or **Timed focus block**. Review the time and choose whether to include notes before using **Send selected task**. You can also **Prepare calendar file** and download the .ics without a Google connection.
+
+For timed blocks, **Check this time** shows whether the primary Calendar is busy. When the check finds free time, TaskBase checks it again before sending. If the block overlaps an event, you can choose another time or explicitly send despite the conflict.
