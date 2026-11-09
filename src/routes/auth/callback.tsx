@@ -25,12 +25,14 @@ function OAuthCallback() {
       sessionStorage.removeItem("taskbase-google-focus-task");
       const params = new URLSearchParams(location.hash.slice(1) || location.search);
       if (error || params.has("error") || !data.session) {
+        sessionStorage.removeItem("taskbase-google-calendar-draft");
         setMessage(
           params.get("error_description") || error?.message || "Google sign-in did not complete.",
         );
         return;
       }
       if (pending && data.session.user.id !== pending) {
+        sessionStorage.removeItem("taskbase-google-calendar-draft");
         void supabase.auth.signOut();
         setMessage("Use the same Google account that owns this TaskBase workspace.");
         return;
@@ -43,6 +45,7 @@ function OAuthCallback() {
           replace: true,
         });
       } else {
+        sessionStorage.removeItem("taskbase-google-calendar-draft");
         void navigate({ to: "/home", replace: true });
       }
     });

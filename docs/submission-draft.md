@@ -42,9 +42,9 @@ Claim the capabilities visible in your recording. Free model mode disables optio
 
 ## Complete in DoraHacks
 
-1. Enter the participant’s Otari sign-up email privately in the form.
-2. Add a shareable link to the participant’s 3–5 minute screen recording with their own narration. Follow the [recording runbook](hackathon-demo.md).
-3. Add your written feedback or participant-recorded feedback. Include links to any relevant Otari PRs or issues you opened.
-4. Check the published branch, first-commit link, and video visibility from a signed-out browser before submitting.
+1. Open **Submit Build** and select **Create new Build**. Copy the project name, one-line description, and project description. Add the hackathon branch as the repository link and a shareable link to the participant’s 3–5 minute screen recording with their own narration. Follow the [recording runbook](hackathon-demo.md).
+2. Return to **Submit Build** and select TaskBase. Paste the first Otari commit link and list the Otari features demonstrated. For the issues and pull requests field, include any links you opened during the hackathon. Enter “None opened” if there are none.
+3. Add your written or participant-recorded feedback. Enter the participant’s Otari sign-up email privately wherever the submission asks for it.
+4. Check the published branch, first-commit link, and video visibility from a signed-out browser. Review the participant agreement before selecting **Submit for Review**.
 
 [DoraHacks submission requirements](https://dorahacks.io/hackathon/2468/detail) · [Judging rubric](https://docs.google.com/document/d/1-spnCZ3f2SSki8cb6FnochjchdyttUsjjxfoE6aBnF4/edit)

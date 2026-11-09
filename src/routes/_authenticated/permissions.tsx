@@ -39,6 +39,14 @@ const gmailSystemLabels = [
   { id: "INBOX", name: "Inbox" },
   { id: "STARRED", name: "Starred" },
 ];
+const calendarDraftSchema = z.object({
+  userId: z.string().uuid(),
+  taskId: z.string().uuid(),
+  timed: z.boolean(),
+  blockStart: z.string(),
+  blockDurationOverride: z.number().int().min(1).max(1440).nullable(),
+  includeDescription: z.boolean(),
+});
 
 function Integrations() {
   const { user } = Route.useRouteContext();
@@ -94,13 +102,44 @@ function Integrations() {
   const reviewHeading = useRef<HTMLHeadingElement>(null);
   const { googleAvailable } = useGoogleOAuth();
 
+  useEffect(() => {
+    const rawDraft = sessionStorage.getItem("taskbase-google-calendar-draft");
+    sessionStorage.removeItem("taskbase-google-calendar-draft");
+    if (!rawDraft) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawDraft);
+    } catch {
+      return;
+    }
+    const draft = calendarDraftSchema.safeParse(parsed);
+    if (!draft.success || draft.data.userId !== user.id || draft.data.taskId !== focusTask) return;
+    setTaskId(draft.data.taskId);
+    setTimed(draft.data.timed);
+    setBlockStart(draft.data.blockStart);
+    setBlockDurationOverride(draft.data.blockDurationOverride);
+    setIncludeDescription(draft.data.includeDescription);
+  }, [focusTask, user.id]);
+
   const connect = useMutation({
     mutationFn: async (scope: keyof typeof scopes | "all") => {
       sessionStorage.setItem("taskbase-google-connect", user.id);
-      if (timed && selectedTask && (scope === "export" || scope === "availability")) {
+      if (selectedTask && (scope === "export" || scope === "availability")) {
         sessionStorage.setItem("taskbase-google-focus-task", selectedTask.id);
+        sessionStorage.setItem(
+          "taskbase-google-calendar-draft",
+          JSON.stringify({
+            userId: user.id,
+            taskId: selectedTask.id,
+            timed,
+            blockStart,
+            blockDurationOverride: slot ? blockDurationOverride : null,
+            includeDescription,
+          }),
+        );
       } else {
         sessionStorage.removeItem("taskbase-google-focus-task");
+        sessionStorage.removeItem("taskbase-google-calendar-draft");
       }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -113,6 +152,7 @@ function Integrations() {
       if (error) {
         sessionStorage.removeItem("taskbase-google-connect");
         sessionStorage.removeItem("taskbase-google-focus-task");
+        sessionStorage.removeItem("taskbase-google-calendar-draft");
         throw error;
       }
     },
