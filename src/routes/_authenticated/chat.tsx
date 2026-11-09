@@ -2,16 +2,16 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { FileText, ListTodo, Loader2, Send, Sparkles, Trash2 } from "lucide-react";
+import { FileText, ListTodo, Loader2, Search, Send, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AgentTimeline, REFINE_STEPS } from "@/components/ai/agent-timeline";
 import { Button } from "@/components/ui/button";
 import { CalendarSourceLink } from "@/components/calendar-source-link";
-import { sourceHeading } from "@/lib/document-text";
+import { sourceHeading, sourceLabel } from "@/lib/document-text";
 import { Textarea } from "@/components/ui/textarea";
 import { chat, clearChat, listChatMessages, refineTasksWithAI } from "@/lib/ai.functions";
 import { z } from "zod";
-import { listDocuments } from "@/lib/documents.functions";
+import { listDocuments, searchKnowledge } from "@/lib/documents.functions";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -54,11 +54,13 @@ function ChatPage() {
   const queryClient = useQueryClient();
   const list = useServerFn(listChatMessages);
   const send = useServerFn(chat);
+  const search = useServerFn(searchKnowledge);
   const wipe = useServerFn(clearChat);
   const refine = useServerFn(refineTasksWithAI);
   const listDocs = useServerFn(listDocuments);
   const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => listDocs() });
   const [useSources, setUseSources] = useState(true);
+  const [searchOnly, setSearchOnly] = useState(false);
   const [sourceId, setSourceId] = useState("");
   const [suggestTasks, setSuggestTasks] = useState(false);
 
@@ -69,6 +71,10 @@ function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const messages = messagesQuery.data ?? [];
+  const selectedSource = documents.find((doc) => doc.id === sourceId && doc.status === "ready")?.id;
+  const searchMut = useMutation({
+    mutationFn: (query: string) => search({ data: { query, sourceId: selectedSource } }),
+  });
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -79,7 +85,7 @@ function ChatPage() {
     requestAnimationFrame(() => {
       element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
     });
-  }, [messages.length, stage, refining]);
+  }, [messages.length, stage, refining, searchMut.data]);
 
   const sendMut = useMutation({
     mutationFn: (message: string) =>
@@ -87,8 +93,7 @@ function ChatPage() {
         data: {
           message,
           useSources,
-          sourceId:
-            useSources && documents.some((doc) => doc.id === sourceId) ? sourceId : undefined,
+          sourceId: useSources ? selectedSource : undefined,
         },
       }),
     onSuccess: async (result) => {
@@ -125,8 +130,9 @@ function ChatPage() {
 
   const submit = (text?: string) => {
     const message = (text ?? input).trim();
-    // if (!message || sendMut.isPending || refining || isBusy) {
-    if (!message || sendMut.isPending || refining) {
+    if (!message || busy) return;
+    if (searchOnly) {
+      if (message.length >= 2 && message.length <= 300) searchMut.mutate(message);
       return;
     }
 
@@ -135,7 +141,11 @@ function ChatPage() {
     sendMut.mutate(message);
   };
 
-  const busy = sendMut.isPending || refining;
+  const busy = sendMut.isPending || refining || searchMut.isPending;
+  const validInput = searchOnly
+    ? input.trim().length >= 2 && input.trim().length <= 300
+    : !!input.trim();
+  const submitLabel = searchOnly ? "Search" : "Send";
 
   return (
     <main className="mx-auto flex h-[calc(100vh-4rem)] max-w-3xl flex-col px-4 py-5 sm:px-6 sm:py-8">
@@ -146,7 +156,7 @@ function ChatPage() {
             Ask for tasks, planning, or answers from your uploaded documents.
           </p>
         </div>
-        {messages.length > 0 && (
+        {!searchOnly && messages.length > 0 && (
           <Button
             variant="ghost"
             size="sm"
@@ -164,7 +174,7 @@ function ChatPage() {
         ref={scrollRef}
         className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 scroll-smooth"
       >
-        {(messages.length === 0 || 1) && (
+        {!searchOnly && messages.length === 0 && (
           <div className="rounded-lg border border-border p-5 text-center">
             <Sparkles className="mx-auto h-6 w-6 text-primary" />
             <h3 className="mt-2 font-medium">What should we work on?</h3>
@@ -198,36 +208,60 @@ function ChatPage() {
           </div>
         )}
         {/* className="prose prose-sm max-w-none dark:prose-invert" */}
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+        {!searchOnly &&
+          messages.map((message) => (
             <div
-              className={`max-w-[88%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap wrap-break-words prose prose-sm max-w-none dark:prose-invert sm:max-w-[80%] ${
-                message.role === "user"
-                  ? "rounded-br-sm bg-primary text-primary-foreground"
-                  : "rounded-bl-sm border border-border bg-card"
-              }`}
+              key={message.id}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              {message.role === "assistant" && (
-                <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
-                  <Sparkles className="h-3 w-3" />
-                  assistant
-                </div>
-              )}
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-              <SourceNotes value={message.source_refs} />
+              <div
+                className={`max-w-[88%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap wrap-break-words prose prose-sm max-w-none dark:prose-invert sm:max-w-[80%] ${
+                  message.role === "user"
+                    ? "rounded-br-sm bg-primary text-primary-foreground"
+                    : "rounded-bl-sm border border-border bg-card"
+                }`}
+              >
+                {message.role === "assistant" && (
+                  <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <Sparkles className="h-3 w-3" />
+                    assistant
+                  </div>
+                )}
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                <SourceNotes value={message.source_refs} />
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+
+        {searchOnly && (
+          <section
+            className="rounded-lg border border-border p-4 text-sm"
+            aria-label="Passage search results"
+          >
+            <p>
+              Find matching text in saved sources. This search uses no model and stays out of chat
+              history.
+            </p>
+            {searchMut.error && (
+              <p role="alert" className="mt-2 text-destructive">
+                {searchMut.error.message}
+              </p>
+            )}
+            {searchMut.data?.length === 0 && (
+              <p className="mt-2" role="status">
+                No matching passages.
+              </p>
+            )}
+            <SourceNotes value={searchMut.data} heading="Matching passages" expanded />
+          </section>
+        )}
 
         {busy && (
           <div className="flex justify-start">
             <div className="max-w-[88%] rounded-2xl rounded-bl-sm border border-border bg-card px-4 py-3 text-sm sm:max-w-[80%]">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>{stage}</span>
+                <span>{searchOnly ? "Searching saved sources…" : stage}</span>
               </div>
               {refining && <AgentTimeline steps={REFINE_STEPS} active={true} />}
             </div>
@@ -235,7 +269,7 @@ function ChatPage() {
         )}
       </div>
 
-      {suggestTasks && (
+      {!searchOnly && suggestTasks && (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
           <span>Find tasks supported by your sources and recent chat?</span>
           <Button size="sm" onClick={addSuggestedTasks} disabled={busy}>
@@ -250,18 +284,35 @@ function ChatPage() {
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={useSources}
-            onChange={(event) => setUseSources(event.target.checked)}
+            checked={searchOnly}
+            onChange={(event) => {
+              setSearchOnly(event.target.checked);
+              searchMut.reset();
+            }}
             disabled={busy}
           />
-          Search knowledge base
+          Search only
         </label>
-        {useSources && (
+        {!searchOnly && (
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={useSources}
+              onChange={(event) => setUseSources(event.target.checked)}
+              disabled={busy}
+            />
+            Search knowledge base
+          </label>
+        )}
+        {(searchOnly || useSources) && (
           <label>
             Source
             <select
               value={sourceId}
-              onChange={(event) => setSourceId(event.target.value)}
+              onChange={(event) => {
+                setSourceId(event.target.value);
+                searchMut.reset();
+              }}
               disabled={busy}
               className="ml-2 max-w-[13rem] rounded border bg-background p-1"
             >
@@ -270,7 +321,7 @@ function ChatPage() {
                 .filter((doc) => doc.status === "ready")
                 .map((doc) => (
                   <option key={doc.id} value={doc.id}>
-                    {doc.name}
+                    {sourceLabel(doc.name)}
                   </option>
                 ))}
             </select>
@@ -293,33 +344,51 @@ function ChatPage() {
               submit();
             }
           }}
-          placeholder="Ask about your work or sources..."
-          aria-label="Chat message"
-          maxLength={2500}
+          placeholder={
+            searchOnly
+              ? "Search by topic or phrase (2–300 characters)"
+              : "Ask about your work or sources..."
+          }
+          aria-label={searchOnly ? "Search query" : "Chat message"}
+          maxLength={searchOnly ? 300 : 2500}
           disabled={busy}
           rows={2}
           className="resize-none"
         />
         <Button
           type="submit"
-          aria-label="Send"
-          disabled={busy || !input.trim()}
+          aria-label={submitLabel}
+          disabled={busy || !validInput}
           className="w-full sm:w-auto"
         >
-          <Send className="mr-2 h-4 w-4 sm:mr-0" />
-          <span className="sm:hidden">Send</span>
+          {searchOnly ? (
+            <Search className="mr-2 h-4 w-4 sm:mr-0" />
+          ) : (
+            <Send className="mr-2 h-4 w-4 sm:mr-0" />
+          )}
+          <span className="sm:hidden">{submitLabel}</span>
         </Button>
       </form>
     </main>
   );
 }
 
-function SourceNotes({ value }: { value: unknown }) {
+function SourceNotes({
+  value,
+  heading = "Sources cited",
+  expanded = false,
+}: {
+  value: unknown;
+  heading?: string;
+  expanded?: boolean;
+}) {
   const parsed = sourceRefs.safeParse(value);
   if (!parsed.success || !parsed.data.length) return null;
   return (
-    <details className="mt-2 border-t pt-2 text-xs">
-      <summary className="cursor-pointer font-medium">Sources cited ({parsed.data.length})</summary>
+    <details open={expanded || undefined} className="mt-2 border-t pt-2 text-xs">
+      <summary className="cursor-pointer font-medium">
+        {heading} ({parsed.data.length})
+      </summary>
       {parsed.data.map((source) => (
         <div key={source.number} className="mt-3">
           <strong>

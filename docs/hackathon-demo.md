@@ -5,7 +5,7 @@ TaskBase turns an event handoff into a source-backed task plan, checks it agains
 ## Before recording
 
 1. Start TaskBase and sign in to the demo workspace. Upload [the repair café handoff](../examples/repair-cafe-handoff.md) in **KnowledgeBase**. Search for **safety briefing** and check that the result includes the November 12 deadline.
-2. Run `node --env-file=.env scripts/check-otari.mjs`. Confirm the budget and model IDs, then check for usable hackathon credits or an authorized provider. Rehearse one short live draft before recording. A passing preflight uses no inference and cannot establish live model access.
+2. Run `node --env-file=.env scripts/check-otari.mjs`. Confirm the budget and model IDs, then check for usable hackathon credits or an authorized provider. Rehearse one short live draft before recording. A passing preflight uses no inference and cannot establish live model access. In free demo mode, leave optional research and code execution off.
 3. For the Google segment, use synthetic messages and events. Prepare a relevant thread and an unrelated demo message. Check Gmail preview, Calendar free/busy, and Calendar write permissions separately. Use the uploaded handoff for the source segment if Google approval is pending.
 4. Open TaskBase and the signed-in Otari workspace in separate tabs. Use the current branch for the recording and keep keys, personal inboxes, and account details out of view.
 
