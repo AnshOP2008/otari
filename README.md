@@ -15,6 +15,8 @@ Uploads and source search use PostgreSQL and spend no model credits. Existing re
 
 ## Enable Google integrations
 
+Google sign-in opens a workspace for the account selected. To connect Gmail or Calendar, use the same account in Integrations and select the requested access on Google's consent screen. In Google Cloud's Testing mode, add each account that will test these permissions to the OAuth test-user list. For public use, configure an external production app and complete Google's scope verification. [Google OAuth audience settings](https://support.google.com/cloud/answer/15549945) · [Verification requirements](https://support.google.com/cloud/answer/13464321)
+
 For a hosted build, apply all migrations to the intended Supabase project, enable Google as a sign-in provider, and configure the Google Calendar and Gmail APIs for the OAuth client. Add the hosted app's `/auth/callback` URL to Supabase's allowed redirects. The Google consent screen must allow the account you're using. Follow [Supabase's Google configuration guide](https://supabase.com/docs/guides/auth/social-login/auth-google).
 
 To test Google locally, use `http://127.0.0.1:54321/auth/v1/callback` as the OAuth client's redirect URI, then add the following to your local `supabase/config.toml`. Use the port where TaskBase is running. Put the client ID and secret in the ignored `.env` and restart the local Supabase stack. TaskBase reads the local provider setting and enables Google sign-in once it is available.

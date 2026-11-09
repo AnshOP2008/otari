@@ -58,14 +58,39 @@ function googleFetch(url: string, token: string, init?: RequestInit) {
   });
 }
 
-function googleFailure(response: Response, service: string) {
-  return new Error(
-    response.status === 401
-      ? `Your Google session expired. Reconnect ${service} in Integrations.`
-      : response.status === 403
-        ? `${service} refused access. Check its OAuth permission and whether the API is enabled.`
-        : `${service} returned HTTP ${response.status}. Please try again.`,
-  );
+async function googleFailure(response: Response, service: string) {
+  if (response.status === 401) {
+    return new Error(`Your Google session expired. Reconnect ${service} in Integrations.`);
+  }
+  if (response.status === 403) {
+    const reasonsSchema = z.object({
+      error: z.object({
+        errors: z.array(z.object({ reason: z.string().optional() })).optional(),
+        details: z.array(z.object({ reason: z.string().optional() })).optional(),
+      }),
+    });
+    const parsed = reasonsSchema.safeParse(await response.json().catch(() => null));
+    const reasons = parsed.success
+      ? [...(parsed.data.error.errors ?? []), ...(parsed.data.error.details ?? [])].map(
+          ({ reason }) => reason,
+        )
+      : [];
+    if (
+      reasons.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT") ||
+      reasons.includes("insufficientPermissions")
+    ) {
+      return new Error(
+        `Google did not grant the permission needed for ${service}. Reconnect in Integrations and select the requested access on Google's consent screen.`,
+      );
+    }
+    if (reasons.includes("SERVICE_DISABLED") || reasons.includes("accessNotConfigured")) {
+      return new Error(`The ${service} API is disabled in the Google Cloud project for this app.`);
+    }
+    return new Error(
+      `${service} refused access. Check its OAuth permission and whether the API is enabled.`,
+    );
+  }
+  return new Error(`${service} returned HTTP ${response.status}. Please try again.`);
 }
 
 const calendarWindow = z.object({
@@ -93,7 +118,7 @@ async function readFreeWindows(data: z.infer<typeof calendarWindow>) {
       }),
     },
   );
-  if (!response.ok) throw googleFailure(response, "Google Calendar");
+  if (!response.ok) throw await googleFailure(response, "Google Calendar");
   const parsed = z
     .object({
       calendars: z.record(
@@ -282,7 +307,7 @@ export const listGoogleCalendars = createServerFn({ method: "POST" })
         "https://www.googleapis.com/calendar/v3/users/me/calendarList?" + params,
         data.accessToken,
       );
-      if (!response.ok) throw googleFailure(response, "Google Calendar");
+      if (!response.ok) throw await googleFailure(response, "Google Calendar");
       const page = schema.parse(await response.json());
       calendars.push(
         ...page.items
@@ -324,7 +349,7 @@ async function readCalendar({
   const entries = new Map<string, ImportEntry>();
   for (let page = 0; page < 3 && entries.size < 50; page++) {
     const response = await googleFetch(endpoint + "?" + params, accessToken);
-    if (!response.ok) throw googleFailure(response, "Google Calendar");
+    if (!response.ok) throw await googleFailure(response, "Google Calendar");
     const { items, nextPageToken } = calendarResponse.parse(await response.json());
     for (const event of items) {
       if (event.extendedProperties?.private?.productivity_companion || entries.has(event.id)) {
@@ -368,7 +393,7 @@ export const listGmailLabels = createServerFn({ method: "POST" })
       gmailLabelApi + "?fields=labels(id,name,type)",
       data.accessToken,
     );
-    if (!response.ok) throw googleFailure(response, "Gmail");
+    if (!response.ok) throw await googleFailure(response, "Gmail");
     const schema = z.object({
       labels: z.array(z.object({ id: z.string(), name: z.string(), type: z.string() })).default([]),
     });
@@ -403,7 +428,7 @@ async function readGmail({
   if (unreadOnly && gmailLabelId !== "UNREAD") params.append("labelIds", "UNREAD");
   if (gmailQuery) params.set("q", gmailQuery);
   const response = await googleFetch(gmailApi + "?" + params, accessToken);
-  if (!response.ok) throw googleFailure(response, "Gmail");
+  if (!response.ok) throw await googleFailure(response, "Gmail");
   const { messages } = gmailList.parse(await response.json());
   const entries: ImportEntry[] = [];
   const seenThreads = new Set<string>();
@@ -419,7 +444,7 @@ async function readGmail({
       });
       const response = await googleFetch(gmailThreadApi + "/" + encodeURIComponent(threadId) + "?" + query, accessToken);
       if (response.status === 404) continue;
-      if (!response.ok) throw googleFailure(response, "Gmail");
+      if (!response.ok) throw await googleFailure(response, "Gmail");
       const { messages: replies } = z.object({ messages: z.array(gmailMessage).default([]) }).parse(await response.json());
       const recent = replies
         .filter((message) => !message.labelIds.some((label) => excludedGmailLabels.has(label)))
@@ -437,7 +462,7 @@ async function readGmail({
     const query = new URLSearchParams({ format: "full", fields: messageFields });
     const message = await googleFetch(gmailApi + "/" + encodeURIComponent(id) + "?" + query, accessToken);
     if (message.status === 404) continue;
-    if (!message.ok) throw googleFailure(message, "Gmail");
+    if (!message.ok) throw await googleFailure(message, "Gmail");
     const parsed = gmailMessage.parse(await message.json());
     if (parsed.labelIds.some((label) => excludedGmailLabels.has(label))) continue;
     entries.push({ id, ...describeGmailMessage(parsed, includeGmailSnippets) });
@@ -681,14 +706,14 @@ export const exportCalendarTask = createServerFn({ method: "POST" })
       body: patch,
     });
     if (update.ok) return calendarWriteReceipt(context.supabase, task.id, update, true);
-    if (update.status !== 404) throw googleFailure(update, "Google Calendar");
+    if (update.status !== 404) throw await googleFailure(update, "Google Calendar");
     // Older TaskBase versions let Google assign the event ID. Reuse that event if present.
     const legacyParams = new URLSearchParams({
       privateExtendedProperty: "task_id=" + task.id,
       maxResults: "1",
     });
     const legacy = await googleFetch(calendarApi + "?" + legacyParams, data.accessToken);
-    if (!legacy.ok) throw googleFailure(legacy, "Google Calendar");
+    if (!legacy.ok) throw await googleFailure(legacy, "Google Calendar");
     const existing = calendarResponse.parse(await legacy.json()).items[0];
     if (existing) {
       const replace = await googleFetch(
@@ -700,7 +725,7 @@ export const exportCalendarTask = createServerFn({ method: "POST" })
           body: patch,
         },
       );
-      if (!replace.ok) throw googleFailure(replace, "Google Calendar");
+      if (!replace.ok) throw await googleFailure(replace, "Google Calendar");
       return calendarWriteReceipt(context.supabase, task.id, replace, true);
     }
     const insert = await googleFetch(calendarApi, data.accessToken, {
@@ -714,9 +739,9 @@ export const exportCalendarTask = createServerFn({ method: "POST" })
         headers,
         body: patch,
       });
-      if (!retry.ok) throw googleFailure(retry, "Google Calendar");
+      if (!retry.ok) throw await googleFailure(retry, "Google Calendar");
       return calendarWriteReceipt(context.supabase, task.id, retry, true);
     }
-    if (!insert.ok) throw googleFailure(insert, "Google Calendar");
+    if (!insert.ok) throw await googleFailure(insert, "Google Calendar");
     return calendarWriteReceipt(context.supabase, task.id, insert, false);
   });

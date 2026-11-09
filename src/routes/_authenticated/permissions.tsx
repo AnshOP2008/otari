@@ -549,6 +549,10 @@ function Integrations() {
           Allow both imports
         </Button>
       </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        On Google’s consent screen, select the permissions you want TaskBase to use before
+        continuing. Signing in by itself grants access to your TaskBase workspace.
+      </p>
 
       {reviewed && (
         <section className="card-soft mt-6 space-y-4 p-5" aria-labelledby="import-review">
