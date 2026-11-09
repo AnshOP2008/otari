@@ -10,7 +10,7 @@ import { CalendarSourceLink } from "@/components/calendar-source-link";
 import { supabase } from "@/integrations/supabase/client";
 import { listDocuments } from "@/lib/documents.functions";
 import { listTasks } from "@/lib/tasks.functions";
-import { useGoogleOAuth } from "@/hooks/use-google-oauth";
+import { googleImportScopes, useGoogleOAuth } from "@/hooks/use-google-oauth";
 import {
   checkCalendarFocusSlot,
   downloadCalendarTask,
@@ -148,7 +148,7 @@ function Integrations() {
         provider: "google",
         options: {
           redirectTo: window.location.origin + "/auth/callback",
-          scopes: scope === "all" ? scopes.calendar + " " + scopes.gmail : scopes[scope],
+          scopes: scope === "all" ? googleImportScopes : scopes[scope],
           queryParams: { include_granted_scopes: "true", prompt: "consent" },
         },
       });
@@ -164,6 +164,9 @@ function Integrations() {
 
   async function getToken() {
     const { data } = await supabase.auth.getSession();
+    if (data.session && data.session.user.id !== user.id) {
+      throw new Error("The signed-in Google account changed. Reload Integrations to switch workspaces.");
+    }
     if (!data.session?.provider_token)
       throw new Error("Connect the Google permission for this action first.");
     return data.session.provider_token;
@@ -551,7 +554,7 @@ function Integrations() {
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
         On Google’s consent screen, select the permissions you want TaskBase to use before
-        continuing. Signing in by itself grants access to your TaskBase workspace.
+        continuing. Choose the same Google account to stay in this workspace.
       </p>
 
       {reviewed && (

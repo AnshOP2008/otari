@@ -3,7 +3,7 @@ import { useState } from "react";
 import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useGoogleOAuth } from "@/hooks/use-google-oauth";
+import { googleImportScopes, useGoogleOAuth } from "@/hooks/use-google-oauth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
@@ -23,15 +23,29 @@ function AuthPage() {
   const [pending, setPending] = useState(false);
   const { local, googleAvailable } = useGoogleOAuth();
 
-  async function google() {
+  async function google(connectImports = false) {
     setPending(true);
     try {
+      sessionStorage.removeItem("taskbase-google-connect");
+      sessionStorage.removeItem("taskbase-google-focus-task");
+      sessionStorage.removeItem("taskbase-google-calendar-draft");
+      if (connectImports) sessionStorage.setItem("taskbase-google-sign-in-imports", "true");
+      else sessionStorage.removeItem("taskbase-google-sign-in-imports");
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: window.location.origin + "/auth/callback" },
+        options: {
+          redirectTo: window.location.origin + "/auth/callback",
+          ...(connectImports
+            ? {
+                scopes: googleImportScopes,
+                queryParams: { include_granted_scopes: "true", prompt: "select_account" },
+              }
+            : {}),
+        },
       });
       if (error) throw error;
     } catch (error) {
+      sessionStorage.removeItem("taskbase-google-sign-in-imports");
       toast.error(error instanceof Error ? error.message : "Could not start Google sign-in.");
       setPending(false);
     }
@@ -71,9 +85,24 @@ function AuthPage() {
         ) : (
           <>
             {googleAvailable && (
-              <Button onClick={google} disabled={pending} variant="outline" className="w-full">
-                Continue with Google
-              </Button>
+              <>
+                <Button
+                  onClick={() => void google()}
+                  disabled={pending}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Continue with Google
+                </Button>
+                <Button
+                  onClick={() => void google(true)}
+                  disabled={pending}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Sign in and connect Gmail + Calendar
+                </Button>
+              </>
             )}
             {local && (
               <p className="text-sm text-muted-foreground">

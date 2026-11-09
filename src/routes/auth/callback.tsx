@@ -19,11 +19,13 @@ function OAuthCallback() {
     let active = true;
     const pending = sessionStorage.getItem("taskbase-google-connect");
     const focusTask = sessionStorage.getItem("taskbase-google-focus-task");
+    const connectImports = sessionStorage.getItem("taskbase-google-sign-in-imports") === "true";
 
     void supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
       sessionStorage.removeItem("taskbase-google-connect");
       sessionStorage.removeItem("taskbase-google-focus-task");
+      sessionStorage.removeItem("taskbase-google-sign-in-imports");
       const params = new URLSearchParams(location.hash.slice(1) || location.search);
       if (error || params.has("error") || !data.session) {
         if (pending && data.session?.user.id === pending) {
@@ -40,11 +42,13 @@ function OAuthCallback() {
       }
       if (pending && data.session.user.id !== pending) {
         sessionStorage.removeItem("taskbase-google-calendar-draft");
-        void supabase.auth.signOut();
-        setMessage("Use the same Google account that owns this TaskBase workspace.");
+        setReturnToIntegrations({});
+        setMessage(
+          "You signed in with a different Google account. Continue to its TaskBase workspace to use the access you just granted.",
+        );
         return;
       }
-      if (pending) {
+      if (pending || connectImports) {
         void navigate({
           to: "/permissions",
           search: { focusTask: focusTask ?? undefined },
@@ -71,7 +75,7 @@ function OAuthCallback() {
           replace
           className="underline"
         >
-          Back to Integrations
+          Open Integrations
         </Link>
       ) : (
         <Link to="/auth" className="underline">

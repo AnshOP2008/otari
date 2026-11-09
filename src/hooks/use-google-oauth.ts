@@ -4,6 +4,8 @@ import { browserSupabaseKey, browserSupabaseUrl } from "@/integrations/supabase/
 const supabaseUrl = browserSupabaseUrl;
 const publishableKey = browserSupabaseKey;
 const local = /^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(supabaseUrl);
+export const googleImportScopes =
+  "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly";
 
 export function useGoogleOAuth() {
   const settings = useQuery({

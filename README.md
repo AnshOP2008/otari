@@ -15,7 +15,7 @@ Uploads and source search use PostgreSQL and spend no model credits. Existing re
 
 ## Enable Google integrations
 
-Google sign-in opens a workspace for the account selected. To connect Gmail or Calendar, use the same account in Integrations and select the requested access on Google's consent screen. In Google Cloud's Testing mode, add each account that will test these permissions to the OAuth test-user list. For public use, configure an external production app and complete Google's scope verification. [Google OAuth audience settings](https://support.google.com/cloud/answer/15549945) · [Verification requirements](https://support.google.com/cloud/answer/13464321)
+Google sign-in opens a workspace for the account selected. To connect Gmail or Calendar, select the requested access on Google's consent screen. Choose the same account to stay in your current workspace. Choosing a different account opens a separate workspace. In Google Cloud's Testing mode, add each account that will test these permissions to the OAuth test-user list. For public use, configure an external production app and complete Google's scope verification. [Google OAuth audience settings](https://support.google.com/cloud/answer/15549945) · [Verification requirements](https://support.google.com/cloud/answer/13464321)
 
 For a hosted build, apply all migrations to the intended Supabase project, enable Google as a sign-in provider, and configure the Google Calendar and Gmail APIs for the OAuth client. Add the hosted app's `/auth/callback` URL to Supabase's allowed redirects. The Google consent screen must allow the account you're using. Follow [Supabase's Google configuration guide](https://supabase.com/docs/guides/auth/social-login/auth-google).
 
