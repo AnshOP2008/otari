@@ -113,25 +113,35 @@ export const chat = createServerFn({ method: "POST" })
     z.object({
       message: z.string().trim().min(1).max(2500),
       useSources: z.boolean().default(true),
+      includeBoard: z.boolean().default(true),
+      includeHistory: z.boolean().default(true),
       sourceId: z.string().uuid().optional(),
     }),
   )
   .handler(async ({ context, data }) => {
     const { supabase, userId } = context;
     const [board, history] = await Promise.all([
-      supabase.from("tasks").select("title,priority,status,due_date").order("position").limit(50),
-      supabase
-        .from("chat_messages")
-        .select("role,content")
-        .order("created_at", { ascending: false })
-        .limit(10),
+      data.includeBoard
+        ? supabase
+            .from("tasks")
+            .select("title,priority,status,due_date")
+            .order("position")
+            .limit(50)
+        : { data: [], error: null },
+      data.includeHistory
+        ? supabase
+            .from("chat_messages")
+            .select("role,content")
+            .order("created_at", { ascending: false })
+            .limit(10)
+        : { data: [], error: null },
     ]);
     if (board.error || history.error) throw new Error("Could not load your chat or board.");
     const previous = history.data.find((message) => message.role === "user")?.content ?? "";
     const followUp = /\b(it|its|they|them|that|those|these|there|earlier|above)\b/i.test(
       data.message,
     );
-    const query = followUp ? data.message + "\n" + previous : data.message;
+    const query = followUp && previous ? data.message + "\n" + previous : data.message;
     const sources = data.useSources
       ? await retrieveSources(supabase, query, {
           limit: 6,
@@ -145,10 +155,17 @@ export const chat = createServerFn({ method: "POST" })
         JSON.stringify({
           question: data.message,
           sources: formatSources(sources),
-          board: board.data,
-          history: history.data
-            .reverse()
-            .map((message) => ({ role: message.role, content: message.content.slice(0, 800) })),
+          ...(data.includeBoard ? { board: board.data } : {}),
+          ...(data.includeHistory
+            ? {
+                history: history.data
+                  .reverse()
+                  .map((message) => ({
+                    role: message.role,
+                    content: message.content.slice(0, 800),
+                  })),
+              }
+            : {}),
         }),
       true,
     );

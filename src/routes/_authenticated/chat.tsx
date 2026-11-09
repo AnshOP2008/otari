@@ -60,6 +60,8 @@ function ChatPage() {
   const listDocs = useServerFn(listDocuments);
   const { data: documents = [] } = useQuery({ queryKey: ["documents"], queryFn: () => listDocs() });
   const [useSources, setUseSources] = useState(true);
+  const [includeBoard, setIncludeBoard] = useState(true);
+  const [includeHistory, setIncludeHistory] = useState(true);
   const [searchOnly, setSearchOnly] = useState(false);
   const [sourceId, setSourceId] = useState("");
   const [suggestTasks, setSuggestTasks] = useState(false);
@@ -93,6 +95,8 @@ function ChatPage() {
         data: {
           message,
           useSources,
+          includeBoard,
+          includeHistory,
           sourceId: useSources ? selectedSource : undefined,
         },
       }),
@@ -271,7 +275,7 @@ function ChatPage() {
 
       {!searchOnly && suggestTasks && (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span>Find tasks supported by your sources and recent chat?</span>
+          <span>Run a separate Otari request to find tasks in saved sources and recent chat?</span>
           <Button size="sm" onClick={addSuggestedTasks} disabled={busy}>
             Add supported tasks
           </Button>
@@ -328,6 +332,34 @@ function ChatPage() {
           </label>
         )}
       </div>
+      {!searchOnly && (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer font-medium">Additional context sent to Otari</summary>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={includeBoard}
+                onChange={(event) => setIncludeBoard(event.target.checked)}
+                disabled={busy}
+              />
+              Include task board
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={includeHistory}
+                onChange={(event) => setIncludeHistory(event.target.checked)}
+                disabled={busy}
+              />
+              Include recent chat
+            </label>
+          </div>
+          <p className="mt-1 text-muted-foreground">
+            Earlier replies may contain quotes from saved sources.
+          </p>
+        </details>
+      )}
       <form
         onSubmit={(event) => {
           event.preventDefault();
