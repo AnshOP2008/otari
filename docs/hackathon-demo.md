@@ -25,6 +25,8 @@ The participant records the screen and speaks in their own voice. Use the labele
 
 ## Submission
 
+Copy the project fields from the [submission draft](submission-draft.md) after recording.
+
 - Project name and one-line description, plus the participant's Otari sign-up email in the submission form.
 - [Public repository](https://github.com/AnshOP2008/otari), [hackathon branch](https://github.com/AnshOP2008/otari/tree/otari-hackathon), and [first Otari commit](https://github.com/AnshOP2008/otari/commit/7d98391cda3714121a646fed70e2ec48e78158e6). Check that the final recording matches the published branch.
 - Otari features demonstrated. Use served model IDs for model claims and gateway events for tool, routing, and guardrail claims. A Calendar API call is a Google integration. An Otari MCP claim requires its own gateway evidence.
