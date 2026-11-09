@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { checkFreeDemoRoutes, completeWithOtari, readOtariBudget } from "./otari.server";
+import { checkFreeDemoRoutes, completeWithOtari, isFreeDemo, readOtariBudget } from "./otari.server";
 
 const Proposal = z.object({
   title: z.string().trim().min(1).max(200),
@@ -31,6 +31,10 @@ function parseObject(raw: string) {
     throw new Error("Otari returned an unreadable plan. Try again with a shorter brief.");
   }
 }
+
+export const getPlanningOptions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(() => ({ freeDemo: isFreeDemo() }));
 
 export const draftPlan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

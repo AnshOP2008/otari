@@ -15,7 +15,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { CalendarSourceLink } from "@/components/calendar-source-link";
 import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
-import { draftPlan, savePlan } from "@/lib/planner.functions";
+import { draftPlan, getPlanningOptions, savePlan } from "@/lib/planner.functions";
 import { listDocuments, loadSourceBrief, searchKnowledge } from "@/lib/documents.functions";
 import { sourceHeading, sourceLabel } from "@/lib/document-text";
 import { checkCalendarCapacity } from "@/lib/google.functions";
@@ -89,6 +89,13 @@ function PlanningDesk() {
   const save = useServerFn(savePlan);
   const queryClient = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
+  const loadPlanningOptions = useServerFn(getPlanningOptions);
+  const { data: planningOptions } = useQuery({
+    queryKey: ["planning-options"],
+    queryFn: () => loadPlanningOptions(),
+    enabled: signedIn,
+  });
+  const optionalToolsAvailable = planningOptions?.freeDemo === false;
   const listDocs = useServerFn(listDocuments);
   const openSource = useServerFn(loadSourceBrief);
   const searchSources = useServerFn(searchKnowledge);
@@ -224,8 +231,8 @@ function PlanningDesk() {
         data: {
           brief,
           ...(calendarCapacity ? { calendarCapacity } : { hours }),
-          capacityCheck,
-          researchTopic,
+          capacityCheck: optionalToolsAvailable && capacityCheck,
+          researchTopic: optionalToolsAvailable ? researchTopic : "",
         },
       });
       setResult(plan);
@@ -580,31 +587,39 @@ function PlanningDesk() {
                   )}
                 </details>
               )}
-              <details className="rounded-xl border border-[#d6ddd0] p-3 text-sm">
-                <summary className="cursor-pointer font-medium">Optional Otari tools</summary>
-                <label className="mt-3 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={capacityCheck}
-                    onChange={(event) => setCapacityCheck(event.target.checked)}
-                  />
-                  Check the estimates with code execution
-                </label>
-                <label htmlFor="topic" className="mt-3 block">
-                  Public web research topic
-                </label>
-                <input
-                  id="topic"
-                  value={researchTopic}
-                  onChange={(event) => setResearchTopic(event.target.value)}
-                  maxLength={160}
-                  placeholder="e.g. accessible event signage"
-                  className="mt-1 w-full rounded-lg border border-[#cbd6c7] bg-white px-3 py-2"
-                />
-                <p className="mt-2 text-xs text-[#4f6357]">
-                  The search step receives only this topic. Enter public information here.
+              {planningOptions?.freeDemo && (
+                <p className="rounded-xl border border-[#d6ddd0] p-3 text-sm">
+                  Free model mode is active. Planning and review use the configured free routes.
+                  Optional web research and code execution are off.
                 </p>
-              </details>
+              )}
+              {optionalToolsAvailable && (
+                <details className="rounded-xl border border-[#d6ddd0] p-3 text-sm">
+                  <summary className="cursor-pointer font-medium">Optional Otari tools</summary>
+                  <label className="mt-3 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={capacityCheck}
+                      onChange={(event) => setCapacityCheck(event.target.checked)}
+                    />
+                    Check the estimates with code execution
+                  </label>
+                  <label htmlFor="topic" className="mt-3 block">
+                    Public web research topic
+                  </label>
+                  <input
+                    id="topic"
+                    value={researchTopic}
+                    onChange={(event) => setResearchTopic(event.target.value)}
+                    maxLength={160}
+                    placeholder="e.g. accessible event signage"
+                    className="mt-1 w-full rounded-lg border border-[#cbd6c7] bg-white px-3 py-2"
+                  />
+                  <p className="mt-2 text-xs text-[#4f6357]">
+                    The search step receives only this topic. Enter public information here.
+                  </p>
+                </details>
+              )}
               {signedIn ? (
                 <Button
                   type="submit"

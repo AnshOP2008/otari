@@ -9,6 +9,8 @@ TaskBase turns an event handoff into a source-backed task plan, checks it agains
 3. For the Google segment, use synthetic messages and events. Prepare a relevant thread and an unrelated demo message. Check Gmail preview, Calendar free/busy, and Calendar write permissions separately. Use the uploaded handoff for the source segment if Google approval is pending.
 4. Open TaskBase and the signed-in Otari workspace in separate tabs. Use the current branch for the recording and keep keys, personal inboxes, and account details out of view.
 
+The free route verified with the synthetic handoff used `openrouter:liquid/lfm-2.5-2.6b:free` for planning and `openrouter:nvidia/nemotron-3.5-super-vl:free` for review. Both gateway requests reported $0.00. Check both selectors before recording because provider availability can change.
+
 ## Four-minute recording
 
 | Time | Show on screen |

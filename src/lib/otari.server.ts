@@ -3,8 +3,12 @@ import { z } from "zod";
 type Role = "planner" | "reviewer";
 type Tool = "otari_web_search" | "otari_code_execution";
 
+export function isFreeDemo() {
+  return process.env.OTARI_FREE_DEMO === "true";
+}
+
 export function checkFreeDemoRoutes(models: string[], requestsTools: boolean) {
-  if (process.env.OTARI_FREE_DEMO !== "true") return;
+  if (!isFreeDemo()) return;
   const freeModel = /^openrouter:[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*:free$/;
   if (models.some((model) => !freeModel.test(model))) {
     throw new Error("Free demo mode requires explicit OpenRouter model IDs ending in :free.");
