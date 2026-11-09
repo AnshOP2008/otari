@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { hasBrowserSupabaseConfig, supabase } from "@/integrations/supabase/client";
 
@@ -8,6 +8,7 @@ export const Route = createFileRoute("/auth/callback")({
 
 function OAuthCallback() {
   const navigate = useNavigate();
+  const [returnToIntegrations, setReturnToIntegrations] = useState<{ focusTask?: string }>();
   const [message, setMessage] = useState(
     hasBrowserSupabaseConfig
       ? "Completing Google sign-in…"
@@ -25,9 +26,15 @@ function OAuthCallback() {
       sessionStorage.removeItem("taskbase-google-focus-task");
       const params = new URLSearchParams(location.hash.slice(1) || location.search);
       if (error || params.has("error") || !data.session) {
-        sessionStorage.removeItem("taskbase-google-calendar-draft");
+        if (pending && data.session?.user.id === pending) {
+          setReturnToIntegrations({ focusTask: focusTask ?? undefined });
+        } else {
+          sessionStorage.removeItem("taskbase-google-calendar-draft");
+        }
         setMessage(
-          params.get("error_description") || error?.message || "Google sign-in did not complete.",
+          params.get("error_description") ||
+            error?.message ||
+            (pending ? "Google permission was not granted." : "Google sign-in did not complete."),
         );
         return;
       }
@@ -56,9 +63,21 @@ function OAuthCallback() {
   return (
     <main className="mx-auto max-w-lg p-8">
       <p role="status">{message}</p>
-      <a href="/auth" className="underline">
-        Back to sign in
-      </a>
+      {returnToIntegrations ? (
+        <Link
+          to="/permissions"
+          search={returnToIntegrations}
+          hash={returnToIntegrations.focusTask ? "calendar-export" : undefined}
+          replace
+          className="underline"
+        >
+          Back to Integrations
+        </Link>
+      ) : (
+        <Link to="/auth" className="underline">
+          Back to sign in
+        </Link>
+      )}
     </main>
   );
 }
