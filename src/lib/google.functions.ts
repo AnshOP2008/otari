@@ -17,6 +17,7 @@ const syncInput = z.object({
   accessToken: z.string().min(1).max(4096),
   calendarId: z.string().min(1).max(512).default("primary"),
   calendarQuery: z.string().trim().max(160).default(""),
+  includeCalendarDescriptions: z.boolean().default(true),
   days: z.number().int().min(1).max(60).default(14),
   maxEmails: z.number().int().min(1).max(20).default(10),
   unreadOnly: z.boolean().default(false),
@@ -28,6 +29,7 @@ const syncInput = z.object({
     .refine((id) => !excludedGmailLabels.has(id.toUpperCase()), "Choose an importable Gmail label.")
     .default("INBOX"),
   gmailQuery: z.string().trim().max(160).default(""),
+  includeGmailSnippets: z.boolean().default(true),
   includeThreadContext: z.boolean().default(false),
 });
 type SyncInput = z.infer<typeof syncInput>;
@@ -300,6 +302,7 @@ async function readCalendar({
   days,
   calendarId,
   calendarQuery,
+  includeCalendarDescriptions,
 }: SyncInput): Promise<ImportEntry[]> {
   const now = new Date();
   const params = new URLSearchParams({
@@ -308,7 +311,10 @@ async function readCalendar({
     maxResults: "50",
     singleEvents: "true",
     orderBy: "startTime",
-    fields: "nextPageToken,items(id,summary,htmlLink,description,start,end,extendedProperties/private)",
+    fields:
+      "nextPageToken,items(id,summary,htmlLink," +
+      (includeCalendarDescriptions ? "description," : "") +
+      "start,end,extendedProperties/private)",
   });
   if (calendarQuery) params.set("q", calendarQuery);
   const endpoint =
@@ -329,7 +335,7 @@ async function readCalendar({
         title,
         `Starts: ${event.start?.dateTime || event.start?.date || "Unknown"}`,
         `Ends: ${event.end?.dateTime || event.end?.date || "Unknown"}`,
-        event.description?.slice(0, 600),
+        includeCalendarDescriptions ? event.description?.slice(0, 600) : undefined,
       ]
         .filter(Boolean)
         .join("\n");
@@ -374,13 +380,13 @@ export const listGmailLabels = createServerFn({ method: "POST" })
       .map(({ id, name }) => ({ id, name }));
   });
 
-function describeGmailMessage(message: z.infer<typeof gmailMessage>) {
+function describeGmailMessage(message: z.infer<typeof gmailMessage>, includeSnippet: boolean) {
   const headers = new Map(
     message.payload?.headers.map(({ name, value }) => [name.toLowerCase(), value.slice(0, 300)]),
   );
   const title = headers.get("subject") || "No subject";
-  const text = `Subject: ${title}\nFrom: ${headers.get("from") || "Unknown"}\nDate: ${headers.get("date") || "Unknown"}\n${message.snippet.slice(0, 700)}`;
-  return { title, text };
+  const headersText = `Subject: ${title}\nFrom: ${headers.get("from") || "Unknown"}\nDate: ${headers.get("date") || "Unknown"}`;
+  return { title, text: includeSnippet ? headersText + "\n" + message.snippet.slice(0, 700) : headersText };
 }
 
 async function readGmail({
@@ -389,6 +395,7 @@ async function readGmail({
   unreadOnly,
   gmailLabelId,
   gmailQuery,
+  includeGmailSnippets,
   includeThreadContext,
 }: SyncInput): Promise<ImportEntry[]> {
   const params = new URLSearchParams({ maxResults: String(maxEmails) });
@@ -400,14 +407,15 @@ async function readGmail({
   const { messages } = gmailList.parse(await response.json());
   const entries: ImportEntry[] = [];
   const seenThreads = new Set<string>();
+  const messageFields = "labelIds," + (includeGmailSnippets ? "snippet," : "") + "payload(headers)";
   for (const { id, threadId } of messages) {
     if (includeThreadContext && threadId) {
       if (seenThreads.has(threadId)) continue;
       seenThreads.add(threadId);
-      // Request snippets and headers only. The projection excludes message bodies and attachments.
+      // The projection excludes message bodies and attachments in both modes.
       const query = new URLSearchParams({
         format: "full",
-        fields: "messages(internalDate,labelIds,snippet,payload(headers))",
+        fields: "messages(internalDate," + messageFields + ")",
       });
       const response = await googleFetch(gmailThreadApi + "/" + encodeURIComponent(threadId) + "?" + query, accessToken);
       if (response.status === 404) continue;
@@ -417,7 +425,7 @@ async function readGmail({
         .filter((message) => !message.labelIds.some((label) => excludedGmailLabels.has(label)))
         .sort((a, b) => Number(a.internalDate ?? 0) - Number(b.internalDate ?? 0))
         .slice(-3)
-        .map(describeGmailMessage);
+        .map((message) => describeGmailMessage(message, includeGmailSnippets));
       const latest = recent.at(-1);
       if (latest) entries.push({
         id: "thread:" + threadId,
@@ -426,18 +434,13 @@ async function readGmail({
       });
       continue;
     }
-    const message = await googleFetch(
-      gmailApi +
-        "/" +
-        encodeURIComponent(id) +
-        "?format=full&fields=labelIds,snippet,payload(headers)",
-      accessToken,
-    );
+    const query = new URLSearchParams({ format: "full", fields: messageFields });
+    const message = await googleFetch(gmailApi + "/" + encodeURIComponent(id) + "?" + query, accessToken);
     if (message.status === 404) continue;
     if (!message.ok) throw googleFailure(message, "Gmail");
     const parsed = gmailMessage.parse(await message.json());
     if (parsed.labelIds.some((label) => excludedGmailLabels.has(label))) continue;
-    entries.push({ id, ...describeGmailMessage(parsed) });
+    entries.push({ id, ...describeGmailMessage(parsed, includeGmailSnippets) });
   }
   return entries;
 }

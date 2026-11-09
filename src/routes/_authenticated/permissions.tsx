@@ -94,9 +94,11 @@ function Integrations() {
   const [days, setDays] = useState(14);
   const [calendarId, setCalendarId] = useState("primary");
   const [calendarQuery, setCalendarQuery] = useState("");
+  const [includeCalendarDescriptions, setIncludeCalendarDescriptions] = useState(true);
   const [maxEmails, setMaxEmails] = useState(10);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [gmailQuery, setGmailQuery] = useState("");
+  const [includeGmailSnippets, setIncludeGmailSnippets] = useState(true);
   const [gmailLabelId, setGmailLabelId] = useState("INBOX");
   const [includeThreadContext, setIncludeThreadContext] = useState(false);
   const [selection, setSelection] = useState<string[]>([]);
@@ -188,11 +190,13 @@ function Integrations() {
       const filters = {
         calendarId,
         calendarQuery: calendarQuery.trim(),
+        includeCalendarDescriptions,
         days,
         maxEmails,
         unreadOnly,
         gmailLabelId,
         gmailQuery,
+        includeGmailSnippets,
         includeThreadContext,
       };
       const gmailLabelName = gmailLabels.find((label) => label.id === gmailLabelId)?.name;
@@ -375,6 +379,21 @@ function Integrations() {
           <p className="text-xs text-muted-foreground">
             Preview up to 50 events from the first three result pages.
           </p>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={includeCalendarDescriptions}
+              disabled={busy}
+              onChange={(event) => {
+                setIncludeCalendarDescriptions(event.target.checked);
+                if (reviewed?.service === "calendar") {
+                  preview.reset();
+                  setSelection([]);
+                }
+              }}
+            />
+            Include event descriptions
+          </label>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -480,8 +499,23 @@ function Integrations() {
               className="mt-1 block w-full rounded border bg-background px-2 py-1.5"
             />
           </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={includeGmailSnippets}
+              disabled={busy}
+              onChange={(event) => {
+                setIncludeGmailSnippets(event.target.checked);
+                if (reviewed?.service === "gmail") {
+                  preview.reset();
+                  setSelection([]);
+                }
+              }}
+            />
+            Include message previews
+          </label>
           <p className="text-xs text-muted-foreground">
-            Imports sender, subject, date and preview. No attachments or email sending.
+            Gmail imports include sender, subject, and date.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -529,11 +563,13 @@ function Integrations() {
             <p className="text-sm text-muted-foreground">
               {reviewed.calendarName} · Next {reviewed.filters.days} days
               {reviewed.filters.calendarQuery && <> · Search “{reviewed.filters.calendarQuery}”</>}
+              {!reviewed.filters.includeCalendarDescriptions && <> · Descriptions excluded</>}
             </p>
           )}
-          {reviewed.service === "gmail" && reviewed.gmailLabelName && (
+          {reviewed.service === "gmail" && (
             <p className="text-sm text-muted-foreground">
-              Gmail label · {reviewed.gmailLabelName}
+              Gmail label · {reviewed.gmailLabelName ?? "Selected label"}
+              {!reviewed.filters.includeGmailSnippets && <> · Message previews excluded</>}
             </p>
           )}
           {reviewed.entries.length === 0 ? (
