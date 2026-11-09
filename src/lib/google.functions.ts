@@ -16,6 +16,7 @@ const excludedGmailLabels = new Set(["DRAFT", "DRAFTS", "SPAM", "TRASH"]);
 const syncInput = z.object({
   accessToken: z.string().min(1).max(4096),
   calendarId: z.string().min(1).max(512).default("primary"),
+  calendarQuery: z.string().trim().max(160).default(""),
   days: z.number().int().min(1).max(60).default(14),
   maxEmails: z.number().int().min(1).max(20).default(10),
   unreadOnly: z.boolean().default(false),
@@ -231,6 +232,7 @@ async function storeSnapshot(
 }
 
 const calendarResponse = z.object({
+  nextPageToken: z.string().optional(),
   items: z
     .array(
       z.object({
@@ -293,7 +295,12 @@ export const listGoogleCalendars = createServerFn({ method: "POST" })
     return calendars;
   });
 
-async function readCalendar({ accessToken, days, calendarId }: SyncInput): Promise<ImportEntry[]> {
+async function readCalendar({
+  accessToken,
+  days,
+  calendarId,
+  calendarQuery,
+}: SyncInput): Promise<ImportEntry[]> {
   const now = new Date();
   const params = new URLSearchParams({
     timeMin: now.toISOString(),
@@ -301,17 +308,22 @@ async function readCalendar({ accessToken, days, calendarId }: SyncInput): Promi
     maxResults: "50",
     singleEvents: "true",
     orderBy: "startTime",
+    fields: "nextPageToken,items(id,summary,htmlLink,description,start,end,extendedProperties/private)",
   });
+  if (calendarQuery) params.set("q", calendarQuery);
   const endpoint =
     "https://www.googleapis.com/calendar/v3/calendars/" +
     encodeURIComponent(calendarId) +
     "/events";
-  const response = await googleFetch(endpoint + "?" + params, accessToken);
-  if (!response.ok) throw googleFailure(response, "Google Calendar");
-  const { items } = calendarResponse.parse(await response.json());
-  return items
-    .filter((event) => !event.extendedProperties?.private?.productivity_companion)
-    .map((event) => {
+  const entries = new Map<string, ImportEntry>();
+  for (let page = 0; page < 3 && entries.size < 50; page++) {
+    const response = await googleFetch(endpoint + "?" + params, accessToken);
+    if (!response.ok) throw googleFailure(response, "Google Calendar");
+    const { items, nextPageToken } = calendarResponse.parse(await response.json());
+    for (const event of items) {
+      if (event.extendedProperties?.private?.productivity_companion || entries.has(event.id)) {
+        continue;
+      }
       const title = (event.summary || "Untitled event").slice(0, 300);
       const text = [
         title,
@@ -321,8 +333,13 @@ async function readCalendar({ accessToken, days, calendarId }: SyncInput): Promi
       ]
         .filter(Boolean)
         .join("\n");
-      return { id: event.id, title, text, url: calendarSourceUrl(event.htmlLink) };
-    });
+      entries.set(event.id, { id: event.id, title, text, url: calendarSourceUrl(event.htmlLink) });
+      if (entries.size === 50) break;
+    }
+    if (!nextPageToken) break;
+    params.set("pageToken", nextPageToken);
+  }
+  return Array.from(entries.values());
 }
 
 const gmailList = z.object({

@@ -93,6 +93,7 @@ function Integrations() {
   const slotKey = slot ? slot.start + "/" + slot.end : null;
   const [days, setDays] = useState(14);
   const [calendarId, setCalendarId] = useState("primary");
+  const [calendarQuery, setCalendarQuery] = useState("");
   const [maxEmails, setMaxEmails] = useState(10);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [gmailQuery, setGmailQuery] = useState("");
@@ -186,6 +187,7 @@ function Integrations() {
     mutationFn: async (service: "calendar" | "gmail") => {
       const filters = {
         calendarId,
+        calendarQuery: calendarQuery.trim(),
         days,
         maxEmails,
         unreadOnly,
@@ -197,7 +199,9 @@ function Integrations() {
       const entries = await loadPreview({
         data: { ...filters, service, accessToken: await getToken() },
       });
-      return { entries, service, filters, gmailLabelName };
+      const calendarName =
+        calendars.data?.find((item) => item.id === calendarId)?.name ?? "Primary calendar";
+      return { entries, service, filters, gmailLabelName, calendarName };
     },
     onMutate: () => setSelection([]),
     onError: (error) => toast.error(error.message),
@@ -358,6 +362,19 @@ function Integrations() {
               ))}
             </select>
           </label>
+          <label className="block text-sm">
+            Calendar search (optional)
+            <input
+              value={calendarQuery}
+              onChange={(event) => setCalendarQuery(event.target.value)}
+              maxLength={160}
+              placeholder="e.g. repair café"
+              className="mt-1 block w-full rounded border bg-background px-2 py-1.5"
+            />
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Preview up to 50 events from the first three result pages.
+          </p>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -508,6 +525,12 @@ function Integrations() {
           <p className="text-sm text-muted-foreground">
             Choose what TaskBase can search. Confirming replaces the saved snapshot for this source.
           </p>
+          {reviewed.service === "calendar" && (
+            <p className="text-sm text-muted-foreground">
+              {reviewed.calendarName} · Next {reviewed.filters.days} days
+              {reviewed.filters.calendarQuery && <> · Search “{reviewed.filters.calendarQuery}”</>}
+            </p>
+          )}
           {reviewed.service === "gmail" && reviewed.gmailLabelName && (
             <p className="text-sm text-muted-foreground">
               Gmail label · {reviewed.gmailLabelName}
